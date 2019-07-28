@@ -47,7 +47,6 @@ impl CPU {
             t: 0,
             m: 0,
             debug: false,
-
         };
         cpu
     }
@@ -108,6 +107,7 @@ impl CPU {
     }
 
     // Funciones de Stack
+    /// Pone en el stack un valor de 16 bits y modifica el puntero
     pub fn push_to_stack(&mut self, mmu: &mut MMU, addr: u16) {
         let addr_0: u8 = ((addr & 0xFF00) >> 8) as u8;
         let addr_1: u8 = (addr & 0x00FF) as u8;
@@ -118,6 +118,7 @@ impl CPU {
         self.sp -= 1;
     }
 
+    /// Saca del stack un valor de 16 bits y modifica el puntero
     pub fn pop_from_stack(&mut self, mmu: &mut MMU) -> u16 {
         self.sp += 1;
         let addr_0 = mmu.read_byte(self.sp);
@@ -142,6 +143,126 @@ impl CPU {
         self.set_h_flag();
 
         self.pc += 2;
+    }
+
+    /// Devuelve true si hay acarreo de medio byte entre bit 11 y 12 eun un u16 en suma
+    fn calc_half_carry_on_u16_sum(&self, value_a: u16, value_b: u16) -> bool {
+        ((value_a & 0xFFF) + (value_b & 0xFFF)) & 0x1000 == 0x1000
+    }
+
+    /// Devuelve true si hay acarreo de medio byte entre bit 11 y 12 eun un u16 en resta
+    fn calc_half_carry_on_u16_sub(&self, value_a: u16, value_b: u16) -> bool {
+        (value_a & 0xFFF) < (value_b & 0xFFF)
+    }
+
+    /// Devuelve true si hay acarreo de medio byte en suma
+    fn calc_half_carry_on_u8_sum(&self, value_a: u8, value_b: u8) -> bool {
+        ((value_a & 0xF) + (value_b & 0xF)) & 0x10 == 0x10
+    }
+
+    /// Devuelve true si hay acarreo de medio byte en resta
+    fn calc_half_carry_on_u8_sub(&self, value_a: u8, value_b: u8) -> bool {
+        (value_a & 0xF) < (value_b & 0xF)
+    }
+
+    fn do_inc_d16(&mut self, register_value: u16) -> u16 {
+        // Probar si hay acarreo de medio byte entre bits 11 y 12
+        if self.calc_half_carry_on_u16_sum(register_value, 1) {
+            self.set_h_flag();
+        } else {
+            self.reset_h_flag();
+        }
+
+        let new_register_value = register_value.wrapping_add(1);
+
+        self.pc += 1;
+        self.t += 4;
+        self.m += 1;
+        // set the flags
+        if new_register_value == 0 {
+            self.set_z_flag();
+        } else {
+            self.reset_z_flag();
+        }
+        self.reset_n_flag();
+        new_register_value
+    }
+
+    fn do_inc_n(&mut self, register_value: u8) -> u8 {
+        // Probar si hay acarreo de medio byte
+        if self.calc_half_carry_on_u8_sum(register_value, 1) {
+            self.set_h_flag();
+        } else {
+            self.reset_h_flag();
+        }
+
+        let new_register_value = register_value.wrapping_add(1);
+
+        self.pc += 1;
+        self.t += 4;
+        self.m += 1;
+        // Establece los flags
+        if new_register_value == 0 {
+            self.set_z_flag();
+        } else {
+            self.reset_z_flag();
+        }
+        self.reset_n_flag();
+        new_register_value
+    }
+
+    fn do_dec_n(&mut self, register_value: u8) -> u8 {
+        // Probar si hay acarreo de medio byte
+        if self.calc_half_carry_on_u8_sub(register_value, 1) {
+            self.reset_h_flag(); // TODO: Creo que es al reves
+        } else {
+            self.set_h_flag();
+        }
+
+        let new_register_value = register_value.wrapping_sub(1);
+
+        self.pc += 1;
+        self.t += 4;
+        self.m += 1;
+        // set the flags
+        if new_register_value == 0 {
+            self.set_z_flag();
+        } else {
+            self.reset_z_flag();
+        }
+        self.reset_n_flag();
+        new_register_value
+    }
+
+    fn do_rl_n(&mut self, register_value: u8) -> u8 {
+        // TODO: ERROR RL n, siendo n un registro el flag C debe ser copiado al bit 0 ver http://jgmalcolm.com/z80/advanced/shif#rl
+        // TODO: Realmente es una rotación de 9 bits usando el flag C
+        // TODO: El algoritmo deberia ser:
+        // TODO: 1)guardamos en un temporal el valor del flag C
+        // TODO: 2)El flag C toma el valor del bit 7
+        // TODO: 3)mover 1 bit a la izquierda el registro
+        // TODO: 4)Poner en bit 0 el valor del temporal
+        let c_flag: bool = (0b1000_0000 & register_value) != 0;
+        if c_flag {
+            self.set_c_flag();
+        } else {
+            self.reset_c_flag();
+        }
+        // Rotación
+        let new_register_value = register_value << 1;
+        //maneja flags
+        if new_register_value == 0 {
+            self.set_z_flag();
+        } else {
+            self.reset_z_flag();
+        }
+        self.reset_n_flag();
+        self.reset_h_flag();
+
+        self.pc += 2;
+        self.t += 8;
+        self.t += 2; // TODO: ERROR
+        new_register_value
     }
 
 
@@ -194,8 +315,15 @@ impl CPU {
             0x67 => Instruction::LdHa,
             0x6F => Instruction::LdLa,
 
-            0x1A => Instruction::LdADE,
-            0x0A => Instruction::LdABC,
+            0x1A => Instruction::LdADe,
+            0x0A => Instruction::LdABc,
+
+            0x78 => Instruction::LdAb,
+            0x79 => Instruction::LdAc,
+            0x7A => Instruction::LdAd,
+            0x7B => Instruction::LdAe,
+            0x7C => Instruction::LdAh,
+            0x7D => Instruction::LdAl,
 
             0x77 => Instruction::LdHlA,
 
@@ -205,6 +333,7 @@ impl CPU {
             0x38 => Instruction::JrC(n1 as i8),
 
             0x32 => Instruction::LddHlA,
+            0x22 => Instruction::LdiHlA,
 
             0xAF => Instruction::XorA,
             0xA8 => Instruction::XorB,
@@ -223,11 +352,30 @@ impl CPU {
             0x24 => Instruction::IncH,
             0x2C => Instruction::IncL,
 
+            // TODO: Posible error INC HL
+            0x23 => Instruction::IncHlNoflags,
+            // TODO: Posible error INC (HL)
+            0x34 => Instruction::IncHl,
+
+            0x13 => Instruction::IncDe,
+            0x03 => Instruction::IncBc,
+            0x33 => Instruction::IncSp,
+
+            0x3D => Instruction::DecA,
+            0x05 => Instruction::DecB,
+            0x0D => Instruction::DecC,
+            0x15 => Instruction::DecD,
+            0x1D => Instruction::DecE,
+            0x25 => Instruction::DecH,
+            0x2D => Instruction::DecL,
+            0x35 => Instruction::DecHl,
+
             0xC4 => Instruction::CallNz(d16),
             0xD4 => Instruction::CallNc(d16),
             0xCC => Instruction::CallZ(d16),
             0xDC => Instruction::Callc(d16),
             0xCD => Instruction::Call(d16),
+            0xC9 => Instruction::Ret,
 
             0xF5 => Instruction::PushAf,
             0xC5 => Instruction::PushBc,
@@ -237,6 +385,8 @@ impl CPU {
             0xC1 => Instruction::PopBc,
             0xD1 => Instruction::PopDe,
             0xE1 => Instruction::PopHl,
+
+            0x17 => Instruction::RLA,
 
             0xCB => { // Opcode especial
                 match cb_opcode {
@@ -303,6 +453,58 @@ impl CPU {
             )
         }
     }
+
+    /// Establece el valor de un registro
+    fn set_register(&mut self, register_name: &str, register_value: u8) {
+        match register_name {
+            "a" => { self.a = register_value; }
+            "b" => { self.b = register_value; }
+            "c" => { self.c = register_value; }
+            "d" => { self.d = register_value; }
+            "e" => { self.e = register_value; }
+            "f" => { self.f = register_value; }
+            "h" => { self.h = register_value; }
+            "l" => { self.l = register_value; }
+            _ => {
+                panic!(
+                    "función set_register: Registro {:?} no conocido",
+                    &register_name
+                );
+            }
+        }
+    }
+
+    /// Devuelve el valor de un registro
+    fn get_register(&self, register_name: &str) -> u8 {
+        match register_name {
+            "a" => self.a,
+            "b" => self.b,
+            "c" => self.c,
+            "d" => self.d,
+            "e" => self.e,
+            "f" => self.f,
+            "h" => self.h,
+            "l" => self.l,
+            _ => {
+                panic!(
+                    "función set_register: Registro {:?} no conocido",
+                    &register_name
+                );
+            }
+        }
+    }
+
+    /// Copia el valor de un registro llamado from a otro llamado to
+    fn do_ld_reg_to_reg(&mut self, to: &str, from: &str) {
+        // Pongo yo uppercase
+        if self.debug { println!("LD {:?},{:?}", to.to_ascii_uppercase(), from.to_uppercase()) }
+        self.set_register(to, self.get_register(from));
+
+        self.pc += 1;
+        self.t += 4;
+        self.m += 1;
+    }
+
 
     fn execute(&mut self, instruction: &Instruction, mmu: &mut MMU) {
         if self.debug {
@@ -428,72 +630,30 @@ impl CPU {
                 self.m += 3; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::LdAa => {
-                if self.debug {
-                    println!("LD A,A");
-                }
-                self.a = self.a; // TODO: ERROR es al reves
-                self.pc += 1;
-                self.t += 4;
-                self.m += 1;
+                self.do_ld_reg_to_reg("a", "a");
             }
             Instruction::LdBa => {
-                if self.debug {
-                    println!("LD B,A");
-                }
-                self.a = self.b; // TODO: ERROR es al reves
-                self.pc += 1;
-                self.t += 4;
-                self.m += 1;
+                self.do_ld_reg_to_reg("b", "a");
             }
             Instruction::LdCa => {
-                if self.debug {
-                    println!("LD C,A");
-                }
-                self.a = self.c; // TODO: ERROR es al reves
-                self.pc += 1;
-                self.t += 4;
-                self.m += 1;
+                self.do_ld_reg_to_reg("c", "a");
             }
             Instruction::LdDa => {
-                if self.debug {
-                    println!("LD D,A");
-                }
-                self.a = self.d; // TODO: ERROR es al reves
-                self.pc += 1;
-                self.t += 4;
-                self.m += 1;
+                self.do_ld_reg_to_reg("d", "a");
             }
             Instruction::LdEa => {
-                if self.debug {
-                    println!("LD E,A");
-                }
-                self.a = self.e; // TODO: ERROR es al reves
-                self.pc += 1;
-                self.t += 4;
-                self.m += 1;
+                self.do_ld_reg_to_reg("e", "a");
             }
             Instruction::LdHa => {
-                if self.debug {
-                    println!("LD H,A");
-                }
-                self.a = self.h; // TODO: ERROR es al reves
-                self.pc += 1;
-                self.t += 4;
-                self.m += 1;
+                self.do_ld_reg_to_reg("h", "a");
             }
             Instruction::LdLa => {
-                if self.debug {
-                    println!("LD L,A");
-                }
-                self.a = self.l; // TODO: ERROR es al reves
-                self.pc += 1;
-                self.t += 4;
-                self.m += 1;
+                self.do_ld_reg_to_reg("l", "a");
             }
-            Instruction::LdADE => {
+            Instruction::LdADe => {
                 if self.debug {
                     println!(
-                        "LD A(DE) antes,   A: {:#X} D: {:#X}, E: {:#X}",
+                        "LD A(DE) antes,     A: {:#X} D: {:#X}, E: {:#X}",
                         self.a, self.d, self.e
                     );
                 }
@@ -504,12 +664,42 @@ impl CPU {
 
                 self.t += 8;
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+                if self.debug {
+                    println!(
+                        "LD A(DE) despues,   A: {:#X} D: {:#X}, E: {:#X}",
+                        self.a, self.d, self.e
+                    );
+                }
+            }
+
+            Instruction::LdAb => {
+                self.do_ld_reg_to_reg("a", "b");
+            }
+
+            Instruction::LdAc => {
+                self.do_ld_reg_to_reg("a", "c");
+            }
+
+            Instruction::LdAd => {
+                self.do_ld_reg_to_reg("a", "d");
+            }
+
+            Instruction::LdAe => {
+                self.do_ld_reg_to_reg("a", "e");
+            }
+
+            Instruction::LdAh => {
+                self.do_ld_reg_to_reg("a", "h");
+            }
+
+            Instruction::LdAl => {
+                self.do_ld_reg_to_reg("a", "l");
             }
 
             Instruction::LdHlA => {
                 if self.debug {
                     println!(
-                        "LD (HL) antes,   A: {:#X} H: {:#X}, L: {:#X}",
+                        "LD (HL),A antes,   A: {:#X} H: {:#X}, L: {:#X}",
                         self.a, self.h, self.l
                     );
                 }
@@ -524,7 +714,7 @@ impl CPU {
 
                 if self.debug {
                     println!(
-                        "LD (HL) despues, A: {:#X} H: {:#X}, L: {:#X}",
+                        "LD (HL),A despues, A: {:#X} H: {:#X}, L: {:#X}",
                         self.a, self.h, self.l
                     );
                 }
@@ -533,7 +723,7 @@ impl CPU {
             Instruction::LddHlA => {
                 if self.debug {
                     println!(
-                        "LD (HL-) antes,   A: {:#X} H: {:#X}, L: {:#X}",
+                        "LD (HL-),A antes,   A: {:#X} H: {:#X}, L: {:#X}",
                         self.a, self.h, self.l
                     );
                 }
@@ -553,7 +743,36 @@ impl CPU {
 
                 if self.debug {
                     println!(
-                        "LD (HL-) despues, A: {:#X} H: {:#X}, L: {:#X}",
+                        "LD (HL-),A despues, A: {:#X} H: {:#X}, L: {:#X}",
+                        self.a, self.h, self.l
+                    );
+                }
+            }
+
+            Instruction::LdiHlA => {
+                if self.debug {
+                    println!(
+                        "LD (HL+),A antes,   A: {:#X} H: {:#X}, L: {:#X}",
+                        self.a, self.h, self.l
+                    );
+                }
+                let h16 = (self.h as u16) << 8;
+                let mut hl: u16 = h16 | (self.l as u16);
+                mmu.write_byte(hl, self.a);
+
+                hl = hl.wrapping_add(1);
+
+                self.h = ((hl & 0xFF00) >> 8) as u8;
+                self.l = (hl & 0x00FF) as u8;
+
+                self.pc += 1;
+
+                self.t += 8;
+                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+
+                if self.debug {
+                    println!(
+                        "LD (HL+),A despues, A: {:#X} H: {:#X}, L: {:#X}",
                         self.a, self.h, self.l
                     );
                 }
@@ -783,147 +1002,147 @@ impl CPU {
                 if self.debug {
                     println!("INC A");
                 }
-                let was_less_than_15 = self.a < 15; // TODO: Error
-                self.a = self.a.wrapping_add(1);
-                let is_bigger_than_15 = self.a > 15;  // TODO: Error
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.a == 0 {
-                    self.set_z_flag();
-                }
-                if was_less_than_15 && is_bigger_than_15 { // TODO: Error
-                    self.set_h_flag();
-                }
-                self.reset_n_flag();
+                self.a = self.do_inc_n(self.a);
             }
 
             Instruction::IncB => {
                 if self.debug {
                     println!("INC B");
                 }
-                let was_less_than_15 = self.b < 15; // TODO: Error
-                self.b = self.b.wrapping_add(1);
-                let is_bigger_than_15 = self.b > 15;  // TODO: Error
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.b == 0 {
-                    self.set_z_flag();
-                }
-                if was_less_than_15 && is_bigger_than_15 { // TODO: Error
-                    self.set_h_flag();
-                }
-                self.reset_n_flag();
+                self.b = self.do_inc_n(self.b);
             }
 
             Instruction::IncC => {
                 if self.debug {
                     println!("INC C");
                 }
-                let was_less_than_15 = self.c < 15; // TODO: Error
-                self.c = self.a.wrapping_add(1);
-                let is_bigger_than_15 = self.c > 15;  // TODO: Error
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.c == 0 {
-                    self.set_z_flag();
-                }
-                if was_less_than_15 && is_bigger_than_15 { // TODO: Error
-                    self.set_h_flag();
-                }
-                self.reset_n_flag();
+                self.c = self.do_inc_n(self.c);
             }
             Instruction::IncD => {
                 if self.debug {
                     println!("INC D");
                 }
-                let was_less_than_15 = self.d < 15; // TODO: Error
-                self.d = self.d.wrapping_add(1);
-                let is_bigger_than_15 = self.d > 15;  // TODO: Error
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.d == 0 {
-                    self.set_z_flag();
-                }
-                if was_less_than_15 && is_bigger_than_15 { // TODO: Error
-                    self.set_h_flag();
-                }
-                self.reset_n_flag();
+                self.d = self.do_inc_n(self.d);
             }
 
             Instruction::IncE => {
                 if self.debug {
                     println!("INC E");
                 }
-                let was_less_than_15 = self.e < 15; // TODO: Error
-                self.e = self.e.wrapping_add(1);
-                let is_bigger_than_15 = self.e > 15;  // TODO: Error
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.e == 0 {
-                    self.set_z_flag();
-                }
-                if was_less_than_15 && is_bigger_than_15 { // TODO: Error
-                    self.set_h_flag();
-                }
-                self.reset_n_flag();
+                self.e = self.do_inc_n(self.e);
             }
             Instruction::IncH => {
                 if self.debug {
                     println!("INC H");
                 }
-                let was_less_than_15 = self.h < 15; // TODO: Error
-                self.h = self.h.wrapping_add(1);
-                let is_bigger_than_15 = self.h > 15;  // TODO: Error
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.h == 0 {
-                    self.set_z_flag();
-                }
-                if was_less_than_15 && is_bigger_than_15 { // TODO: Error
-                    self.set_h_flag();
-                }
-                self.reset_n_flag();
+                self.h = self.do_inc_n(self.h);
             }
 
             Instruction::IncL => {
                 if self.debug {
                     println!("INC L");
                 }
-                let was_less_than_15 = self.l < 15; // TODO: Error
-                self.l = self.a.wrapping_add(1);
-                let is_bigger_than_15 = self.l > 15;  // TODO: Error
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.l == 0 {
-                    self.set_z_flag();
-                }
-                if was_less_than_15 && is_bigger_than_15 { // TODO: Error oes una cosa o es otra no ambas
-                    self.set_h_flag();
-                }
-                self.reset_n_flag();
+                self.l = self.do_inc_n(self.l);
             }
 
+            Instruction::IncHl => { // TODO: ERROR direccion indirecta
+                if self.debug {
+                    println!("INC (HL)");
+                }
+                let h16 = (self.h as u16) << 8;
+                let mut hl: u16 = h16 | (self.l as u16);
+                hl = self.do_inc_d16(hl);
+                self.h = ((hl & 0xFF00) >> 8) as u8;
+                self.l = (hl & 0x00FF) as u8;
+            }
+
+            Instruction::IncHlNoflags => {
+                if self.debug {
+                    println!("INC HL");
+                }
+                let h16 = (self.h as u16) << 8;
+                let mut hl: u16 = h16 | (self.l as u16);
+                hl = hl.wrapping_add(1);
+                self.h = ((hl & 0xFF00) >> 8) as u8;
+                self.l = (hl & 0x00FF) as u8;
+
+                self.pc += 1;
+                self.t += 8;
+                self.m += 2;
+            }
+
+            Instruction::IncBc => {
+                if self.debug {
+                    println!("INC BC");
+                }
+                let b16 = (self.b as u16) << 8;
+                let mut bc: u16 = b16 | (self.c as u16);
+                bc = bc.wrapping_add(1);
+                self.b = ((bc & 0xFF00) >> 8) as u8;
+                self.c = (bc & 0x00FF) as u8;
+
+                self.pc += 1;
+                self.t += 8;
+                self.m += 2;
+            }
+
+            Instruction::IncDe => {
+                if self.debug {
+                    println!("INC DE");
+                }
+                let d16 = (self.d as u16) << 8;
+                let mut de: u16 = d16 | (self.e as u16);
+                de = de.wrapping_add(1);
+                self.d = ((de & 0xFF00) >> 8) as u8;
+                self.e = (de & 0x00FF) as u8;
+
+                self.pc += 1;
+                self.t += 8;
+                self.m += 2;
+            }
+
+            Instruction::DecA => {
+                if self.debug {
+                    println!("DEC A");
+                }
+                self.a = self.do_dec_n(self.a);
+            }
+            Instruction::DecB => {
+                if self.debug {
+                    println!("DEC B");
+                }
+                self.b = self.do_dec_n(self.b);
+            }
+            Instruction::DecC => {
+                if self.debug {
+                    println!("DEC C");
+                }
+                self.c = self.do_dec_n(self.c);
+            }
+            Instruction::DecD => {
+                if self.debug {
+                    println!("DEC D");
+                }
+                self.d = self.do_dec_n(self.d);
+            }
+            Instruction::DecE => {
+                if self.debug {
+                    println!("DEC E");
+                }
+                self.e = self.do_dec_n(self.e);
+            }
+            Instruction::DecH => {
+                if self.debug {
+                    println!("DEC H");
+                }
+                self.h = self.do_dec_n(self.h);
+            }
+            Instruction::DecL => {
+                if self.debug {
+                    println!("DEC L");
+                }
+                self.l = self.do_dec_n(self.l);
+            }
             Instruction::Call(d16) => {
                 if self.debug {
                     println!("CALL d16: {:#X}", d16);
@@ -934,6 +1153,17 @@ impl CPU {
 
                 self.t += 24;
                 self.m += 6; //TODO: Creo que teniendo los t states es suficiente
+            }
+
+            Instruction::Ret => {
+                if self.debug {
+                    println!("RET");
+                }
+                self.pc = self.pop_from_stack(mmu);
+
+
+                self.t += 16;
+                self.m += 4; //TODO: Creo que teniendo los t states es suficiente
             }
 
             Instruction::PushAf => {
@@ -951,7 +1181,7 @@ impl CPU {
 
             Instruction::PushBc => {
                 if self.debug {
-                    println!("PUSH BC");
+                    println!("PUSH BC  B:{:#X}  c:{:#X}", self.b, self.c);
                 }
                 let b16 = (self.b as u16) << 8;
                 let bc: u16 = b16 | (self.c as u16);
@@ -1049,12 +1279,52 @@ impl CPU {
                 if self.debug {
                     println!("RL A");
                 }
-
-
-                self.pc += 2;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+                self.a = self.do_rl_n(self.a);
+            }
+            Instruction::RlB => {
+                if self.debug {
+                    println!("RL B");
+                }
+                self.b = self.do_rl_n(self.b);
+            }
+            Instruction::RlC => {
+                if self.debug {
+                    println!("RL C");
+                }
+                self.c = self.do_rl_n(self.c);
+            }
+            Instruction::RlD => {
+                if self.debug {
+                    println!("RL D");
+                }
+                self.d = self.do_rl_n(self.d);
+            }
+            Instruction::RlE => {
+                if self.debug {
+                    println!("RL E");
+                }
+                self.e = self.do_rl_n(self.e);
+            }
+            Instruction::RlH => {
+                if self.debug {
+                    println!("RL H");
+                }
+                self.h = self.do_rl_n(self.h);
+            }
+            Instruction::RlL => {
+                if self.debug {
+                    println!("RL L");
+                }
+                self.l = self.do_rl_n(self.l);
+            }
+            Instruction::RLA => {
+                if self.debug {
+                    println!("RLA");
+                }
+                self.a = self.do_rl_n(self.a);
+                self.pc -= 1;  // Solucion poco natural, decrementar despues de incrementar 2
+                self.t -= 4;   // Solucion poco natural, decrementar despues de incrementar
+                self.m -= 1;   // Solucion poco natural, decrementar despues de incrementar
             }
 
             _ => panic!(

@@ -10,9 +10,9 @@ impl fmt::Debug for MMU {
             f,
             "VRAM: \n\nOAM RAM: {:?}\n\nIO RAM {:?}\n\nH RAM: {:?}\n\n",
             //&self.ram[0x8000..0xA000],
-            &self.ram[0xFE00..0xFEA0],
-            &self.ram[0xFF00..0xFF80],
-            &self.ram[0xFE80..0xFFFF],
+            &self.ram[0xFE00..0xFEA1],  // Rangos no son inclusivos en RUST?
+            &self.ram[0xFF00..0xFF81],
+            &self.ram[0xFE80..],
         )
     }
 }

@@ -1,3 +1,5 @@
+/* Emulador que puede servir para comprobar que va bien
+ http://www.z80.info/zip/zemu.zip */
 use main::{MMU, CPU};
 
 use std::fs::File;

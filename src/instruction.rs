@@ -31,13 +31,18 @@ pub enum Instruction {
     LdAf00U8(u8),
 
     LdFf00Ca,
-    LddHlA,
 
-    LdABC,
-    LdADE,
-    LdAB,
-    LdAD,
-    LdAH,
+    LddHlA,
+    LdiHlA,
+
+    LdABc,
+    LdADe,
+    LdAb,
+    LdAc,
+    LdAd,
+    LdAe,
+    LdAh,
+    LdAl,
 
     R001(u8, String),
 
@@ -72,7 +77,12 @@ pub enum Instruction {
     IncE,
     IncH,
     IncL,
-    IncHL,
+
+    IncBc,
+    IncDe,
+    IncHl,
+    IncSp,
+    IncHlNoflags,
 
     Call(u16),
     CallNz(u16),
@@ -98,5 +108,17 @@ pub enum Instruction {
     RlL,
     RlHl,
 
+    RLA,
+
+    DecA,
+    DecB,
+    DecC,
+    DecD,
+    DecE,
+    DecH,
+    DecL,
+    DecHl,
+
+    Ret,
 }
 
