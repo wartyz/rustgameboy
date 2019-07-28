@@ -1,0 +1,102 @@
+#[derive(Debug)]
+pub enum Instruction {
+    Nop,
+
+    LdBc(u16),
+    LdDe(u16),
+    LdHl(u16),
+    LdSp(u16),
+
+    LdA(u8),
+    LdB(u8),
+    LdC(u8),
+    LdD(u8),
+    LdE(u8),
+    LdH(u8),
+    LdL(u8),
+
+    LdAa,
+    LdBa,
+    LdCa,
+    LdDa,
+    LdEa,
+    LdHa,
+    LdLa,
+    LdBcA,
+    LdDeA,
+    LdHlA,
+    LdXxA(u16),
+
+    LdFf00U8a(u8),
+    LdAf00U8(u8),
+
+    LdFf00Ca,
+    LddHlA,
+
+    LdABC,
+    LdADE,
+    LdAB,
+    LdAD,
+    LdAH,
+
+    R001(u8, String),
+
+    XorA,
+    XorB,
+    XorC,
+    XorD,
+    XorE,
+    XorH,
+    XorL,
+    XorHL,
+    Xor(u8),
+
+    BitbA(u8),
+    BitbB(u8),
+    BitbC(u8),
+    BitbD(u8),
+    BitbE(u8),
+    BitbH(u8),
+    BitbL(u8),
+    BitbHL(u8),
+
+    JrNz(i8),
+    JrZ(i8),
+    JrNc(i8),
+    JrC(i8),
+
+    IncA,
+    IncB,
+    IncC,
+    IncD,
+    IncE,
+    IncH,
+    IncL,
+    IncHL,
+
+    Call(u16),
+    CallNz(u16),
+    CallZ(u16),
+    CallNc(u16),
+    Callc(u16),
+
+    PushAf,
+    PushBc,
+    PushDe,
+    PushHl,
+    PopAf,
+    PopBc,
+    PopDe,
+    PopHl,
+
+    RlA,
+    RlB,
+    RlC,
+    RlD,
+    RlE,
+    RlH,
+    RlL,
+    RlHl,
+
+}
+
