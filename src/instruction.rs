@@ -28,7 +28,7 @@ pub enum Instruction {
     LdXxA(u16),
 
     LdFf00U8a(u8),
-    LdAf00U8(u8),
+    LdAFf00U8(u8),
 
     LdFf00Ca,
 
@@ -65,6 +65,8 @@ pub enum Instruction {
     BitbL(u8),
     BitbHL(u8),
 
+    // i8 es con signo!
+    Jr(i8),
     JrNz(i8),
     JrZ(i8),
     JrNc(i8),
@@ -120,5 +122,15 @@ pub enum Instruction {
     DecHl,
 
     Ret,
+
+    CpA,
+    CpB,
+    CpC,
+    CpD,
+    CpE,
+    CpH,
+    CpL,
+    CpHL,
+    Cp(u8),
 }
 

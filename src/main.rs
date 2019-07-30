@@ -20,7 +20,7 @@ fn main() {
 // Ejecuta instrucciones en RAM
     //println!("MMU ANTES: {:?}", mmu);
     let mut cpu = CPU::new();
-    cpu.set_debug_flag();
+    //cpu.set_debug_flag();
     loop {
         cpu.run_instruction(&mut mmu);
     }
