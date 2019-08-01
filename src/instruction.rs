@@ -121,6 +121,16 @@ pub enum Instruction {
     DecL,
     DecHl,
 
+    SubA,
+    SubB,
+    SubC,
+    SubD,
+    SubE,
+    SubH,
+    SubL,
+    SubHl,
+    Sub(u8),
+
     Ret,
 
     CpA,

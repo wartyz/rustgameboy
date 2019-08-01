@@ -1,5 +1,5 @@
 [package]
-name = "main"
+name = "gbrustemu"
 version = "0.1.0"
 authors = ["saturnozmarte"]
 edition = "2018"
