@@ -2,8 +2,8 @@ use crate::instruction::Instruction;
 use crate::mmu::MMU;
 //use crate::ppu::PPU;
 
-use std::fmt;
 use crate::ppu::PPU;
+use std::fmt;
 
 //#[derive(Debug)]
 pub struct CPU {
@@ -28,28 +28,31 @@ pub struct CPU {
 
 impl fmt::Debug for CPU {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CPU \n{{A: {:#X}, B: {:#X}, C: {:#X}, D: {:#X}, E: {:#X}, H: {:#X}, L: {:#X}}} \
-        \nflags-> {{Z: {:?}, N: {:?}, H: {:?}, C: {:?}}}\
-        \n{{PC: {:#X}, SP: {:#X}}}\n",
-               self.a,
-               self.b,
-               self.c,
-               self.d,
-               self.e,
-               self.h,
-               self.l,
-               self.get_z_flag(),
-               self.get_n_flag(),
-               self.get_h_flag(),
-               self.get_c_flag(),
-               self.pc,
-               self.sp)
+        write!(
+            f,
+            "CPU \n{{A: {:#X}, B: {:#X}, C: {:#X}, D: {:#X}, E: {:#X}, H: {:#X}, L: {:#X}}} \
+             \nflags-> {{Z: {:?}, N: {:?}, H: {:?}, C: {:?}}}\
+             \n{{PC: {:#X}, SP: {:#X}}}\n",
+            self.a,
+            self.b,
+            self.c,
+            self.d,
+            self.e,
+            self.h,
+            self.l,
+            self.get_z_flag(),
+            self.get_n_flag(),
+            self.get_h_flag(),
+            self.get_c_flag(),
+            self.pc,
+            self.sp
+        )
     }
 }
 
 impl CPU {
     pub fn new() -> CPU {
-        let mut cpu = CPU {
+        let cpu = CPU {
             a: 0,
             b: 0,
             c: 0,
@@ -68,7 +71,6 @@ impl CPU {
         };
         cpu
     }
-
 
     // DEBUG **********************************
     pub fn set_debug_flag(&mut self) {
@@ -261,21 +263,21 @@ impl CPU {
     }
 
     fn do_rl_n(&mut self, register_value: u8) -> u8 {
-        // TODO: ERROR RL n, siendo n un registro el flag C debe ser copiado al bit 0 ver http://jgmalcolm.com/z80/advanced/shif#rl
-        // TODO: Realmente es una rotación de 9 bits usando el flag C
-        // TODO: El algoritmo deberia ser:
-        // TODO: 1)guardamos en un temporal el valor del flag C
-        // TODO: 2)El flag C toma el valor del bit 7
-        // TODO: 3)mover 1 bit a la izquierda el registro
-        // TODO: 4)Poner en bit 0 el valor del temporal
+        let old_c_flag = self.get_c_flag();
         let c_flag: bool = (0b1000_0000 & register_value) != 0;
         if c_flag {
             self.set_c_flag();
         } else {
             self.reset_c_flag();
         }
+
         // Rotación
-        let new_register_value = register_value << 1;
+        let mut new_register_value = register_value << 1;
+        new_register_value = new_register_value & 0b1111_1110;
+        if old_c_flag {
+            new_register_value += 1;
+        }
+
         //maneja flags
         if new_register_value == 0 {
             self.set_z_flag();
@@ -291,9 +293,10 @@ impl CPU {
         new_register_value
     }
 
-
     fn decode(&mut self, byte: u8, mmu: &MMU) -> Instruction {
-        if self.debug { println!("Decodificando PC: {:#X}", self.pc); }
+        if self.debug {
+            println!("Decodificando PC: {:#X}", self.pc);
+        }
 
         // Preparar variables especiales
 
@@ -506,14 +509,30 @@ impl CPU {
     /// Establece el valor de un registro
     fn set_register(&mut self, register_name: &str, register_value: u8) {
         match register_name {
-            "a" => { self.a = register_value; }
-            "b" => { self.b = register_value; }
-            "c" => { self.c = register_value; }
-            "d" => { self.d = register_value; }
-            "e" => { self.e = register_value; }
-            "f" => { self.f = register_value; }
-            "h" => { self.h = register_value; }
-            "l" => { self.l = register_value; }
+            "a" => {
+                self.a = register_value;
+            }
+            "b" => {
+                self.b = register_value;
+            }
+            "c" => {
+                self.c = register_value;
+            }
+            "d" => {
+                self.d = register_value;
+            }
+            "e" => {
+                self.e = register_value;
+            }
+            "f" => {
+                self.f = register_value;
+            }
+            "h" => {
+                self.h = register_value;
+            }
+            "l" => {
+                self.l = register_value;
+            }
             _ => {
                 panic!(
                     "función set_register: Registro {:?} no conocido",
@@ -546,7 +565,9 @@ impl CPU {
     /// Copia el valor de un registro llamado from a otro llamado to
     fn do_ld_reg_to_reg(&mut self, to: &str, from: &str) {
         // Pongo yo uppercase
-        if self.debug { println!("LD {:?},{:?}", to.to_ascii_uppercase(), from.to_uppercase()) }
+        if self.debug {
+            println!("LD {:?},{:?}", to.to_ascii_uppercase(), from.to_uppercase())
+        }
         self.set_register(to, self.get_register(from));
 
         self.pc += 1;
@@ -554,9 +575,10 @@ impl CPU {
         self.m += 1;
     }
 
-
     fn execute(&mut self, instruction: &Instruction, mmu: &mut MMU) {
-        if self.debug { println!("Ejecutando PC: {:#X}", self.pc); }
+        if self.debug {
+            println!("Ejecutando PC: {:#X}", self.pc);
+        }
 
         match instruction {
             Instruction::LdA(n) => {
@@ -707,7 +729,7 @@ impl CPU {
                 }
                 let d16 = (self.d as u16) << 8;
                 let de: u16 = d16 | (self.e as u16);
-                self.a = mmu.read_byte(d16); //TODO: ERROR es de no d16
+                self.a = mmu.read_byte(de);
                 self.pc += 1;
 
                 self.t += 8;
@@ -769,7 +791,9 @@ impl CPU {
             }
 
             Instruction::LdXxA(d16) => {
-                if self.debug { println!("LD (XX),A     XX: {:#X}", d16); }
+                if self.debug {
+                    println!("LD (XX),A     XX: {:#X}", d16);
+                }
 
                 mmu.write_byte(*d16, self.a);
 
@@ -1057,12 +1081,13 @@ impl CPU {
             }
 
             Instruction::Jr(n) => {
-                if self.debug { println!("JR n: {:#X}", n); }
+                if self.debug {
+                    println!("JR n: {:#X}", n);
+                }
                 self.pc = self.pc + 2; //TODO: ERROR No sirve para nada
                 self.pc = self.pc.wrapping_add(*n as u16);
                 self.t += 12;
                 self.m += 3;
-
 
                 //self.pc = self.pc.wrapping_add(*n as u16);
                 self.t += 12;
@@ -1070,40 +1095,57 @@ impl CPU {
             }
 
             Instruction::IncA => {
-                if self.debug { println!("INC A"); }
+                if self.debug {
+                    println!("INC A");
+                }
                 self.a = self.do_inc_n(self.a);
             }
 
             Instruction::IncB => {
-                if self.debug { println!("INC B"); }
+                if self.debug {
+                    println!("INC B");
+                }
                 self.b = self.do_inc_n(self.b);
             }
 
             Instruction::IncC => {
-                if self.debug { println!("INC C"); }
+                if self.debug {
+                    println!("INC C");
+                }
                 self.c = self.do_inc_n(self.c);
             }
             Instruction::IncD => {
-                if self.debug { println!("INC D"); }
+                if self.debug {
+                    println!("INC D");
+                }
                 self.d = self.do_inc_n(self.d);
             }
 
             Instruction::IncE => {
-                if self.debug { println!("INC E"); }
+                if self.debug {
+                    println!("INC E");
+                }
                 self.e = self.do_inc_n(self.e);
             }
             Instruction::IncH => {
-                if self.debug { println!("INC H"); }
+                if self.debug {
+                    println!("INC H");
+                }
                 self.h = self.do_inc_n(self.h);
             }
 
             Instruction::IncL => {
-                if self.debug { println!("INC L"); }
+                if self.debug {
+                    println!("INC L");
+                }
                 self.l = self.do_inc_n(self.l);
             }
 
-            Instruction::IncHl => { // TODO: ERROR direccion indirecta
-                if self.debug { println!("INC (HL)"); }
+            Instruction::IncHl => {
+                // TODO: ERROR direccion indirecta (no lo ha mirado bien)
+                if self.debug {
+                    println!("INC (HL)");
+                }
                 let h16 = (self.h as u16) << 8;
                 let mut hl: u16 = h16 | (self.l as u16);
                 hl = self.do_inc_d16(hl);
@@ -1112,7 +1154,9 @@ impl CPU {
             }
 
             Instruction::IncHlNoflags => {
-                if self.debug { println!("INC HL"); }
+                if self.debug {
+                    println!("INC HL");
+                }
                 let h16 = (self.h as u16) << 8;
                 let mut hl: u16 = h16 | (self.l as u16);
                 hl = hl.wrapping_add(1);
@@ -1125,7 +1169,9 @@ impl CPU {
             }
 
             Instruction::IncBc => {
-                if self.debug { println!("INC BC"); }
+                if self.debug {
+                    println!("INC BC");
+                }
                 let b16 = (self.b as u16) << 8;
                 let mut bc: u16 = b16 | (self.c as u16);
                 bc = bc.wrapping_add(1);
@@ -1138,7 +1184,9 @@ impl CPU {
             }
 
             Instruction::IncDe => {
-                if self.debug { println!("INC DE"); }
+                if self.debug {
+                    println!("INC DE");
+                }
                 let d16 = (self.d as u16) << 8;
                 let mut de: u16 = d16 | (self.e as u16);
                 de = de.wrapping_add(1);
@@ -1151,63 +1199,93 @@ impl CPU {
             }
 
             Instruction::DecA => {
-                if self.debug { println!("DEC A"); }
+                if self.debug {
+                    println!("DEC A");
+                }
                 self.a = self.do_dec_n(self.a);
             }
             Instruction::DecB => {
-                if self.debug { println!("DEC B"); }
+                if self.debug {
+                    println!("DEC B");
+                }
                 self.b = self.do_dec_n(self.b);
             }
             Instruction::DecC => {
-                if self.debug { println!("DEC C"); }
+                if self.debug {
+                    println!("DEC C");
+                }
                 self.c = self.do_dec_n(self.c);
             }
             Instruction::DecD => {
-                if self.debug { println!("DEC D"); }
+                if self.debug {
+                    println!("DEC D");
+                }
                 self.d = self.do_dec_n(self.d);
             }
             Instruction::DecE => {
-                if self.debug { println!("DEC E"); }
+                if self.debug {
+                    println!("DEC E");
+                }
                 self.e = self.do_dec_n(self.e);
             }
             Instruction::DecH => {
-                if self.debug { println!("DEC H"); }
+                if self.debug {
+                    println!("DEC H");
+                }
                 self.h = self.do_dec_n(self.h);
             }
             Instruction::DecL => {
-                if self.debug { println!("DEC L"); }
+                if self.debug {
+                    println!("DEC L");
+                }
                 self.l = self.do_dec_n(self.l);
             }
             Instruction::SubA => {
-                if self.debug { println!("SUB A") };
+                if self.debug {
+                    println!("SUB A")
+                };
                 self.a = self.do_sub(self.a, self.a);
             }
             Instruction::SubB => {
-                if self.debug { println!("SUB B") };
+                if self.debug {
+                    println!("SUB B")
+                };
                 self.a = self.do_sub(self.a, self.b);
             }
             Instruction::SubC => {
-                if self.debug { println!("SUB C") };
+                if self.debug {
+                    println!("SUB C")
+                };
                 self.a = self.do_sub(self.a, self.c);
             }
             Instruction::SubD => {
-                if self.debug { println!("SUB D") };
+                if self.debug {
+                    println!("SUB D")
+                };
                 self.a = self.do_sub(self.a, self.d);
             }
             Instruction::SubE => {
-                if self.debug { println!("SUB E") };
+                if self.debug {
+                    println!("SUB E")
+                };
                 self.a = self.do_sub(self.a, self.e);
             }
             Instruction::SubH => {
-                if self.debug { println!("SUB H") };
+                if self.debug {
+                    println!("SUB H")
+                };
                 self.a = self.do_sub(self.a, self.h);
             }
             Instruction::SubL => {
-                if self.debug { println!("SUB L") };
+                if self.debug {
+                    println!("SUB L")
+                };
                 self.a = self.do_sub(self.a, self.l);
             }
             Instruction::Call(d16) => {
-                if self.debug { println!("CALL d16: {:#X}", d16); }
+                if self.debug {
+                    println!("CALL d16: {:#X}", d16);
+                }
                 self.pc += 3;
                 self.push_to_stack(mmu, self.pc);
                 self.pc = *d16;
@@ -1217,16 +1295,19 @@ impl CPU {
             }
 
             Instruction::Ret => {
-                if self.debug { println!("RET"); }
+                if self.debug {
+                    println!("RET");
+                }
                 self.pc = self.pop_from_stack(mmu);
-
 
                 self.t += 16;
                 self.m += 4; //TODO: Creo que teniendo los t states es suficiente
             }
 
             Instruction::PushAf => {
-                if self.debug { println!("PUSH AF"); }
+                if self.debug {
+                    println!("PUSH AF");
+                }
                 let a16 = (self.a as u16) << 8;
                 let af: u16 = a16 | (self.f as u16);
                 self.push_to_stack(mmu, af);
@@ -1237,7 +1318,9 @@ impl CPU {
             }
 
             Instruction::PushBc => {
-                if self.debug { println!("PUSH BC  B:{:#X}  c:{:#X}", self.b, self.c); }
+                if self.debug {
+                    println!("PUSH BC  B:{:#X}  c:{:#X}", self.b, self.c);
+                }
                 let b16 = (self.b as u16) << 8;
                 let bc: u16 = b16 | (self.c as u16);
                 self.push_to_stack(mmu, bc);
@@ -1248,7 +1331,9 @@ impl CPU {
             }
 
             Instruction::PushDe => {
-                if self.debug { println!("PUSH DE"); }
+                if self.debug {
+                    println!("PUSH DE");
+                }
                 let d16 = (self.d as u16) << 8;
                 let de: u16 = d16 | (self.e as u16);
                 self.push_to_stack(mmu, de);
@@ -1259,7 +1344,9 @@ impl CPU {
             }
 
             Instruction::PushHl => {
-                if self.debug { println!("PUSH HL"); }
+                if self.debug {
+                    println!("PUSH HL");
+                }
                 let h16 = (self.h as u16) << 8;
                 let hl: u16 = h16 | (self.l as u16);
                 self.push_to_stack(mmu, hl);
@@ -1269,11 +1356,12 @@ impl CPU {
                 self.m += 6; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::PopAf => {
-                if self.debug { println!("POP AF"); }
+                if self.debug {
+                    println!("POP AF");
+                }
                 let addr: u16 = self.pop_from_stack(mmu);
                 let a = ((addr & 0xFF00) >> 8) as u8;
                 self.f = (addr & 0x00FF) as u8;
-
 
                 self.pc += 1;
 
@@ -1281,11 +1369,12 @@ impl CPU {
                 self.m += 3; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::PopDe => {
-                if self.debug { println!("POP DE"); }
+                if self.debug {
+                    println!("POP DE");
+                }
                 let addr: u16 = self.pop_from_stack(mmu);
                 let d = ((addr & 0xFF00) >> 8) as u8;
                 self.e = (addr & 0x00FF) as u8;
-
 
                 self.pc += 1;
 
@@ -1293,11 +1382,12 @@ impl CPU {
                 self.m += 3; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::PopHl => {
-                if self.debug { println!("POP HL"); }
+                if self.debug {
+                    println!("POP HL");
+                }
                 let addr: u16 = self.pop_from_stack(mmu);
                 let h = ((addr & 0xFF00) >> 8) as u8;
                 self.l = (addr & 0x00FF) as u8;
-
 
                 self.pc += 1;
 
@@ -1306,11 +1396,12 @@ impl CPU {
             }
 
             Instruction::PopBc => {
-                if self.debug { println!("POP BC"); }
+                if self.debug {
+                    println!("POP BC");
+                }
                 let addr: u16 = self.pop_from_stack(mmu);
                 let b = ((addr & 0xFF00) >> 8) as u8;
                 self.c = (addr & 0x00FF) as u8;
-
 
                 self.pc += 1;
 
@@ -1319,66 +1410,96 @@ impl CPU {
             }
 
             Instruction::RlA => {
-                if self.debug { println!("RL A"); }
+                if self.debug {
+                    println!("RL A");
+                }
                 self.a = self.do_rl_n(self.a);
             }
             Instruction::RlB => {
-                if self.debug { println!("RL B"); }
+                if self.debug {
+                    println!("RL B");
+                }
                 self.b = self.do_rl_n(self.b);
             }
             Instruction::RlC => {
-                if self.debug { println!("RL C"); }
+                if self.debug {
+                    println!("RL C");
+                }
                 self.c = self.do_rl_n(self.c);
             }
             Instruction::RlD => {
-                if self.debug { println!("RL D"); }
+                if self.debug {
+                    println!("RL D");
+                }
                 self.d = self.do_rl_n(self.d);
             }
             Instruction::RlE => {
-                if self.debug { println!("RL E"); }
+                if self.debug {
+                    println!("RL E");
+                }
                 self.e = self.do_rl_n(self.e);
             }
             Instruction::RlH => {
-                if self.debug { println!("RL H"); }
+                if self.debug {
+                    println!("RL H");
+                }
                 self.h = self.do_rl_n(self.h);
             }
             Instruction::RlL => {
-                if self.debug { println!("RL L"); }
+                if self.debug {
+                    println!("RL L");
+                }
                 self.l = self.do_rl_n(self.l);
             }
             Instruction::RLA => {
-                if self.debug { println!("RLA"); }
+                if self.debug {
+                    println!("RLA");
+                }
                 self.a = self.do_rl_n(self.a);
-                self.pc -= 1;  // Solucion poco natural, decrementar despues de incrementar 2
-                self.t -= 4;   // Solucion poco natural, decrementar despues de incrementar
-                self.m -= 1;   // Solucion poco natural, decrementar despues de incrementar
+                self.pc -= 1; // Solucion poco natural, decrementar despues de incrementar 2
+                self.t -= 4; // Solucion poco natural, decrementar despues de incrementar
+                self.m -= 1; // Solucion poco natural, decrementar despues de incrementar
             }
             Instruction::CpA => {
-                if self.debug { println!("CP A"); }
+                if self.debug {
+                    println!("CP A");
+                }
                 let _ = self.do_sub(self.a, self.a);
             }
             Instruction::CpB => {
-                if self.debug { println!("CP B"); }
+                if self.debug {
+                    println!("CP B");
+                }
                 let _ = self.do_sub(self.a, self.b);
             }
             Instruction::CpC => {
-                if self.debug { println!("CP C"); }
+                if self.debug {
+                    println!("CP C");
+                }
                 let _ = self.do_sub(self.a, self.c);
             }
             Instruction::CpD => {
-                if self.debug { println!("CP D"); }
+                if self.debug {
+                    println!("CP D");
+                }
                 let _ = self.do_sub(self.a, self.d);
             }
             Instruction::CpE => {
-                if self.debug { println!("CP E"); }
+                if self.debug {
+                    println!("CP E");
+                }
                 let _ = self.do_sub(self.a, self.e);
             }
             Instruction::CpH => {
-                if self.debug { println!("CP H"); }
+                if self.debug {
+                    println!("CP H");
+                }
                 let _ = self.do_sub(self.a, self.h);
             }
             Instruction::CpL => {
-                if self.debug { println!("CP L"); }
+                if self.debug {
+                    println!("CP L");
+                }
                 let _ = self.do_sub(self.a, self.l);
             }
             Instruction::CpHL => {
@@ -1396,22 +1517,24 @@ impl CPU {
             }
 
             Instruction::Cp(n) => {
-                if self.debug { println!("CP n:  {:#X}", n); }
+                if self.debug {
+                    println!("CP n:  {:#X}", n);
+                }
 
                 let _ = self.do_sub(self.a, *n);
 
                 self.pc += 1; // (Reincrementos)
                 self.t += 4;
                 self.m += 1;
-//                if *n == 0x90 {
-//                    println!("MMU state: {:?}", mmu);
-//                    println!("CPU state: {:?}", self);
-//                }
+                //                if *n == 0x90 {
+                //                    println!("MMU state: {:?}", mmu);
+                //                    println!("CPU state: {:?}", self);
+                //                }
             }
 
             _ => panic!(
                 "\nESTADO DE MEM: {:?}\nESTADO CPU: {:?}\nEJECUCION: Instrucción no \
-                reconocida {:?} en PC {:#X}",
+                 reconocida {:?} en PC {:#X}",
                 mmu, self, instruction, self.pc,
             ),
         }
@@ -1420,23 +1543,25 @@ impl CPU {
     pub fn run_instruction(&mut self, mmu: &mut MMU, ppu: &mut PPU) {
         self.last_m = self.m; // TODO: ¿REDUNDANTE?
         self.last_t = self.t; // TODO: ¿REDUNDANTE?
-        // Obtener instrucción:
+                              // Obtener instrucción:
         let byte = mmu.read_byte(self.pc);
         // Decodificar instrucción
         let instruction = self.decode(byte, mmu);
         // Ejecutar instrucción
         self.execute(&instruction, mmu);
 
-        if self.pc == 0x00E8 {
-            panic!(
-                "\nESTADO DE MEM: {:?}\nESTADO CPU: {:?}\nEJECUCION: Instrucción no \
-                reconocida {:?} en PC {:#X}",
-                mmu, self, instruction, self.pc,
-            )
-        }
-
-        let current_instruction_t_clocks_passed = self.t - self.last_t;// TODO: ¿tiene sentido?
-        //let lcdc = mmu.read_byte(0xFF40);
+        let current_instruction_t_clocks_passed = self.t - self.last_t; // TODO: ¿tiene sentido?
+                                                                        //let lcdc = mmu.read_byte(0xFF40);
         ppu.step(current_instruction_t_clocks_passed, mmu);
+
+        if self.pc == 0x00E8 {
+            let bg_tile_set = ppu.get_bg_tile_set(mmu);
+            let mut i = 0;
+            while i < bg_tile_set.len() {
+                println!("TILE: {:?}", ppu.get_tile(mmu, (0x8000 + i) as u16));
+                i += 16;
+            }
+            panic!("STOP");
+        }
     }
 }

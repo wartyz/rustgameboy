@@ -1,4 +1,7 @@
 use crate::mmu::MMU;
+//use minifb::Key;
+//use minifb::Window;
+//use minifb::WindowOptions;
 
 const WIDTH: usize = 256;
 const HEIGHT: usize = 256;
@@ -7,16 +10,44 @@ const HEIGHT: usize = 256;
 pub struct PPU {
     mode: u8,
     mode_clock: usize,
-    //    buffer: Vec<u32>,
+    buffer: Vec<u32>,
 }
 
 impl PPU {
     pub fn new() -> PPU {
-        PPU {
+        let ppu = PPU {
             mode: 0,
-            //            buffer: vec![0; WIDTH * HEIGHT],
+            buffer: vec![0; WIDTH * HEIGHT],
             mode_clock: 0,
+        };
+
+        ppu
+    }
+
+    pub fn get_lcdc(&self, mmu: &MMU) -> u8 {
+        mmu.read_byte(0xFF40)
+    }
+
+    pub fn is_lcd_enable(&self, mmu: &MMU) -> bool {
+        (self.get_lcdc(mmu) & 0b1000_0000) != 0
+    }
+
+    pub fn get_bg_tile_set(&self, mmu: &MMU) -> [u8; 4096] {
+        // @TODO check LCDC
+        let mut tile_set = [0; 4096];
+
+        for i in 0..16 {
+            tile_set[i] = mmu.read_byte(0x8000 + i as u16);
         }
+        tile_set
+    }
+
+    pub fn get_tile(&self, mmu: &MMU, first_tile_byte_addr: u16) -> [u8; 16] {
+        let mut tile = [0; 16];
+        for i in 0..16 {
+            tile[i] = mmu.read_byte(first_tile_byte_addr + i as u16);
+        }
+        tile
     }
 
     pub fn step(&mut self, cpu_clocks_passed: usize, mmu: &mut MMU) {
@@ -31,6 +62,7 @@ impl PPU {
             // probar en que modo estamos
             let mut ly: u8 = mmu.read_byte(0xFF44);
             if self.mode_clock > 456 && self.mode != 1 {
+                // Esto ocurre en HBLANK
                 ly = ly.wrapping_add(1);
                 mmu.write_byte(0xFF44, ly);
                 if ly <= 144 {
@@ -40,13 +72,14 @@ impl PPU {
 
             match self.mode_clock {
                 t if t <= 80 => self.mode = 2,
-                t if t <= 252 => self.mode = 3, // Acumulado 80 + 172
-                t if t <= 456 => self.mode = 0, // Acumulado 80 + 172 + 204
-                t if t <= 4560 => self.mode = 1,// Cada 10 lineas
+                t if t <= 252 => self.mode = 3,  // Acumulado 80 + 172
+                t if t <= 456 => self.mode = 0,  // Acumulado 80 + 172 + 204
+                t if t <= 4560 => self.mode = 1, // Cada 10 lineas
                 t if t > 4560 => {
                     self.mode = 2;
                     self.mode_clock = 0;
-                    if ly > 154 { //TODO: ERROR
+                    if ly > 154 {
+                        // Es correcto, un frame entero cada 154 scanlines
                         mmu.write_byte(0xFF44, 0);
                     }
                 }
