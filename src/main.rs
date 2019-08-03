@@ -2,7 +2,7 @@
 http://www.z80.info/zip/zemu.zip */
 use gbrustemu::cpu::CPU;
 use gbrustemu::mmu::MMU;
-use gbrustemu::ppu::PPU;
+use gbrustemu::ppu::{LIGHTEST_GREEN, LIGHT_GREEN, PPU};
 
 use minifb::{Key, Window, WindowOptions};
 use std::fs::File;
@@ -26,9 +26,9 @@ fn main() {
     let mut cpu = CPU::new();
     let mut ppu = PPU::new();
 
-    //cpu.set_debug_flag(); // qUITAR ESTA LÍNEA SI NO SE QUIERE DEBUG
+    //cpu.set_debug_flag(); // QUITAR ESTA LÍNEA SI NO SE QUIERE DEBUG
 
-    let mut screen = vec![0; WIDTH * HEIGHT];
+    let mut screen = vec![LIGHTEST_GREEN; WIDTH * HEIGHT];
     let mut window = Window::new(
         "Prueba - ESC para salir",
         WIDTH,
@@ -41,13 +41,24 @@ fn main() {
     while window.is_open() && !window.is_key_down(Key::Escape) {
         cpu.run_instruction(&mut mmu, &mut ppu);
 
-        //        if ppu.is_lcd_enable() {
-        //            for i in screen.iter_mut() {
-        //                *i = 0;
-        //            }
-        //
-        //            window.update_with_buffer(&screen).unwrap();
-        //        }
+        if ppu.is_lcd_enable(&mmu) {
+            let tile = ppu.get_tile(&mmu, 33168);
+            println!("{:?}", tile);
+
+            let minifb_tile = ppu.transform_tile_to_minifb_tile(&mmu, tile);
+            //println!("{:?}", minifb_tile);
+            // Lo sacamos por la pantalla
+            for i in 0..8 {
+                for j in 0..8 {
+                    screen[(i * WIDTH) + j] = minifb_tile[i][j];
+                }
+            }
+            let lcdc = ppu.get_lcdc(&mmu);
+            println!("LCDC: {:b}", lcdc);
+
+            //9800 - 9BFF
+            window.update_with_buffer(&screen).unwrap();
+        }
     }
 
     //        println!("MMU state: {:?}", mmu);
