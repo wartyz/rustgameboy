@@ -3,6 +3,7 @@ use crate::mmu::MMU;
 //use crate::ppu::PPU;
 
 use crate::ppu::PPU;
+use std::cell::RefMut;
 use std::fmt;
 
 //#[derive(Debug)]
@@ -1520,16 +1521,13 @@ impl CPU {
                 if self.debug {
                     println!("CP n:  {:#X}", n);
                 }
-
+                //mmu.write_byte(0xFF44, mmu.read_byte(0xFF44) + 0x01);
+                //println!("{}", mmu.read_byte(0xFF44));
                 let _ = self.do_sub(self.a, *n);
 
                 self.pc += 1; // (Reincrementos)
                 self.t += 4;
                 self.m += 1;
-                //                if *n == 0x90 {
-                //                    println!("MMU state: {:?}", mmu);
-                //                    println!("CPU state: {:?}", self);
-                //                }
             }
 
             _ => panic!(
@@ -1540,7 +1538,7 @@ impl CPU {
         }
     }
 
-    pub fn run_instruction(&mut self, mmu: &mut MMU, ppu: &mut PPU) {
+    pub fn run_instruction(&mut self, mmu: &mut MMU, ppu: RefMut<PPU>) {
         self.last_m = self.m; // TODO: ¿REDUNDANTE?
         self.last_t = self.t; // TODO: ¿REDUNDANTE?
                               // Obtener instrucción:
@@ -1554,19 +1552,19 @@ impl CPU {
                                                                         //let lcdc = mmu.read_byte(0xFF40);
         ppu.step(current_instruction_t_clocks_passed, mmu);
 
-        if self.pc == 0x00E8 {
-            //let bg_tile_set = ppu.get_bg_tile_set(mmu);
-            let mut i = 0;
-            //while i < bg_tile_set.len() {
-            let tile = ppu.get_tile(mmu, 33168);
-            //println!("TILE ADDR: {:?}", (0x8000 + i) as u16);
-            println!("TILE: {:?}", tile);
-
-            ppu.transform_tile_to_minifb_tile(&mmu, tile);
-
-            i += 16;
-            // }
-            panic!("Paleta BGP: {:b}", ppu.get_bgp(&mmu));
-        }
+        //        if self.pc == 0x00E8 {
+        //            //let bg_tile_set = ppu.get_bg_tile_set(mmu);
+        //            let mut i = 0;
+        //            //while i < bg_tile_set.len() {
+        //            let tile = ppu.get_tile(mmu, 33168);
+        //            //println!("TILE ADDR: {:?}", (0x8000 + i) as u16);
+        //            println!("TILE: {:?}", tile);
+        //
+        //            ppu.transform_tile_to_minifb_tile(&mmu, tile);
+        //
+        //            i += 16;
+        //            // }
+        //            panic!("Paleta BGP: {:b}", ppu.get_bgp(&mmu));
+        //        }
     }
 }

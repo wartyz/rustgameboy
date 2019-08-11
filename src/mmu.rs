@@ -8,10 +8,15 @@ from 0-255 at $8000-$9000. In signed mode, tiles are numbered in two's complemen
 from -127 to 128 at $87FF-$97FF. I think... lol. Generally most ppl use 0-255 tiles,
 since it's nice and easy. */
 
+use crate::ppu::PPU;
 use std::fmt;
 
 pub struct MMU {
-    ram: [u8; 65_536], //0x0000 to 0xFFFF
+    ram: [u8; 65_536],
+    //0x0000 to 0xFFFF
+    boot_rom: [u8; 256],
+    pub dirty_vram_flag: bool,
+    pub dirty_viewport_flag: bool,
 }
 
 impl fmt::Debug for MMU {
@@ -46,38 +51,62 @@ impl fmt::Debug for MMU {
             &self.ram[0xFF49],
             &self.ram[0xFF4A],
             &self.ram[0xFF4B],
-            &self.ram[0x8000..0x9000],
-            &self.ram[0x9800..0x9C00],
-            //            "VRAM: {:?}\n\nOAM RAM: {:?}\n\nIO RAM: {:?}\n\nH RAM: {:?}\n\n",
-            //            &self.ram[0x8000..0xA001],
-            //            &self.ram[0xFE00..0xFEA1],
-            //            &self.ram[0xFF00..0xFF81],
-            //            &self.ram[0xFE80..],
+            &self.ram[0x8000..0x87FF], // Tile sel #1:tiles 0-127
+            &self.ram[0x9800..0x9BFF], // Tile map 0
+                                       //            "VRAM: {:?}\n\nOAM RAM: {:?}\n\nIO RAM: {:?}\n\nH RAM: {:?}\n\n",
+                                       //            &self.ram[0x8000..0xA001],
+                                       //            &self.ram[0xFE00..0xFEA1],
+                                       //            &self.ram[0xFF00..0xFF81],
+                                       //            &self.ram[0xFE80..],
         )
     }
 }
 
 impl MMU {
     pub fn new() -> MMU {
-        let mem = MMU { ram: [0; 65_536] }; // Poner 255 para ver cuando se pone 0
-        mem
+        let mmu = MMU {
+            ram: [0; 65_536],
+            boot_rom: *include_bytes!("../ROMS/DMG_ROM.bin"), // Lee el fichero ROM
+            dirty_vram_flag: false,
+            dirty_viewport_flag: false,
+        };
+        mmu
     }
 
     pub fn write_byte(&mut self, address: u16, value: u8) {
         self.ram[address as usize] = value;
+
+        let ppu = &mut self.ppu;
+        if address >= 0x8000 && address < 0x9800 {
+            // I need to rasterize the tile being changeds
+
+            // start rasterizing the entire tileset and later refactor
+            // @TODO rasterize only the tile being changed
+            ppu.rasterize_entire_tile_set(&self);
+        }
+        self.ram[address as usize] = value;
+        if address >= 0x8000 && address < 0xA000 {
+            self.dirty_vram_flag = true;
+        }
+        if address == 0xFF42 || address == 0xFF43 {
+            self.dirty_viewport_flag = true;
+        }
     }
 
     pub fn read_byte(&self, address: u16) -> u8 {
-        self.ram[address as usize]
+        if address < 0x00FF && self.ram[0xFF50] == 0 {
+            self.boot_rom[address as usize]
+        } else {
+            self.ram[address as usize]
+        }
     }
 
     pub fn from_rom_file(&mut self, rom_file: &[u8]) {
-        //let bytes = &rom_file[..rom_file.len()];
         let mut i: u16 = 0x0000;
         for &byte in rom_file.iter() {
-            //println!("{:#x}", (byte as u16));
+            //            println!("{:#X}", i);
             self.write_byte(i, byte);
-            i += 1;
+            i += 1
         }
     }
 }

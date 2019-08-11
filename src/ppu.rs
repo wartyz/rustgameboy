@@ -1,10 +1,10 @@
 use crate::mmu::MMU;
-//use minifb::Key;
-//use minifb::Window;
-//use minifb::WindowOptions;
 
 const WIDTH: usize = 256;
 const HEIGHT: usize = 256;
+
+pub const SCREEN_WIDTH: usize = 160;
+pub const SCREEN_HEIGHT: usize = 144;
 
 //Colores ALPHA,R,G,B
 pub const DARKEST_GREEN: u32 = 0xFF0F380F;
@@ -12,50 +12,63 @@ pub const DARK_GREEN: u32 = 0xFF306230;
 pub const LIGHT_GREEN: u32 = 0xFF8BAC0F;
 pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
 
-#[derive(Debug)]
 pub struct PPU {
     mode: u8,
     mode_clock: usize,
-    buffer: Vec<u32>,
+    background_buffer: Vec<u32>,
+    viewport: Vec<u32>,
 }
 
 impl PPU {
     pub fn new() -> PPU {
         let ppu = PPU {
             mode: 0,
-            buffer: vec![0; WIDTH * HEIGHT],
+            background_buffer: vec![LIGHTEST_GREEN; WIDTH * HEIGHT], // Un tile = 64 pixels
             mode_clock: 0,
+            viewport: vec![LIGHTEST_GREEN; WIDTH * HEIGHT],
         };
 
         ppu
     }
 
-    // Registro LCDC
+    /// Devuelve registro LCDC
     pub fn get_lcdc(&self, mmu: &MMU) -> u8 {
         mmu.read_byte(0xFF40)
     }
 
-    /// Registro BGP     BGP Palette Data(R/W)
+    /// Devuelve registro BGP     BGP Palette Data(R/W)
     /// Asigna escala de grises a los números de color de los tiles BG y de ventana
     pub fn get_bgp(&self, mmu: &MMU) -> u8 {
         mmu.read_byte(0xFF47)
     }
 
+    /// Devuelve registro SCY
+    pub fn get_scy(&self, mmu: &MMU) -> u8 {
+        mmu.read_byte(0xFF42)
+    }
+
+    /// Devuelve registro SCX
+    pub fn get_scx(&self, mmu: &MMU) -> u8 {
+        mmu.read_byte(0xFF43)
+    }
+
+    /// Comprueba si el bit de activación de lcd está activado
     pub fn is_lcd_enable(&self, mmu: &MMU) -> bool {
         (self.get_lcdc(mmu) & 0b1000_0000) != 0
     }
 
-    pub fn get_tile_set(&self, mmu: &MMU) -> [[u8; 16]; 256] {
-        // @TODO check LCDC
-        let mut tile_set = [[0; 16]; 256];
-
-        for i in 0..256 {
-            tile_set[i] = self.get_tile(&mmu, (0x8000 + (i * 16)) as u16);
-        }
-        tile_set
+    pub fn get_tile_set(&self, mmu: &MMU) -> &Vec<u32> {
+        &self.rasterized_tile_set
     }
 
-    pub fn get_tile_map(&self, mmu: &MMU) {}
+    pub fn get_tile_map(&self, mmu: &MMU) -> [u8; 1_024] {
+        let mut tile_map: [u8; 1024] = [0; 1_024];
+
+        for i in 0..1_024 {
+            tile_map[i] = mmu.read_byte((0x9800 + i) as u16);
+        }
+        tile_map
+    }
 
     pub fn get_tile(&self, mmu: &MMU, first_tile_byte_addr: u16) -> [u8; 16] {
         let mut tile = [0; 16];
@@ -63,6 +76,60 @@ impl PPU {
             tile[i] = mmu.read_byte(first_tile_byte_addr + i as u16);
         }
         tile
+    }
+
+    pub fn transform_background_buffer_into_screen(&self, mmu: &MMU) -> Vec<u32> {
+        let scx = self.get_scx(mmu) as usize;
+        let scy = self.get_scy(mmu) as usize;
+
+        //        let scx = 0;
+        //        let scy = 0;
+
+        let mut viewport = vec![LIGHTEST_GREEN; SCREEN_WIDTH * SCREEN_HEIGHT]; // 160 x 144 = 23040
+        let mut i = 0;
+        //self.populate_background_buffer(mmu);
+        for (m, minifb_tile) in self.background_buffer.iter().enumerate() {
+            let line = m / WIDTH;
+            let column = m % WIDTH;
+            if line >= scy && line < (scy + 144) && column >= scx && column < (scx + 160) {
+                viewport[i] = *minifb_tile;
+                i += 1;
+            }
+        }
+        viewport
+    }
+
+    pub fn rasterize_entire_tile_set(&mut self, mmu: &MMU) {
+        for i in 0..8192 {
+            let tile = self.get_tile(mmu, 0x8000 + i);
+            let rasterized_tile = self.raster_tile(mmu, tile);
+            for (j, reaterized_pixel) in rasterized_tile.iter().enumerate() {
+                self.rasterized_tile_set[i as usize] = *reaterized_pixel;
+            }
+        }
+    }
+    /// Rellena el buffer gráfico de 256 X 256 pixels
+    pub fn populate_background_buffer(&mut self, mmu: &MMU) {
+        // Obtenemos el conjunto de tiles
+        //let tile_set = self.get_tile_set(mmu);
+        // Obtenemos el mapa de tiles
+        let tile_map = self.get_tile_map(mmu);
+        // Rellenamos background_buffer según tile_map y lo transformamos a tile minifb
+        for (t, tile_map_item) in tile_map.iter().enumerate() {
+            let rasterized_tile_set_index = (*tile_map_item as usize - 0x8000) as usize;
+            let tile =
+                self.rasterized_tile_set[rasterized_tile_set_index..rasterized_tile_set_index + 9];
+            //let minifb_tile = self.transform_tile_to_minifb_tile(mmu, tile);
+            for (i, pixel) in tile.iter().enumerate() {
+                let h_offset = (i % 8) + ((t % 32) * 8);
+                let v_offset = ((i / 8) + (t / 32) * 8) * WIDTH;
+                self.background_buffer[h_offset + v_offset] = *pixel;
+            }
+        }
+    }
+
+    pub fn get_background_buffer(&self) -> &Vec<u32> {
+        &self.background_buffer
     }
 
     /// Primera fase pares de bits a paleta de background
@@ -73,7 +140,7 @@ impl PPU {
             0b00 => bgp_palette & 0b0000_0011,
             0b01 => (bgp_palette & 0b0000_1100) >> 2,
             0b10 => (bgp_palette & 0b0011_0000) >> 4,
-            0b11 => (bgp_palette & 0b1100_0000) >> 6, // TODO: ERROR el pone 4
+            0b11 => (bgp_palette & 0b1100_0000) >> 4, // TODO: ERROR es 6
 
             _ => bgp_palette & 0b0000_0011,
         }
@@ -92,8 +159,8 @@ impl PPU {
     }
 
     /// Convierte tile en un arreglo de bits ARGB para que lo entienda minifb
-    pub fn transform_tile_to_minifb_tile(&self, mmu: &MMU, tile: [u8; 16]) -> [[u32; 8]; 8] {
-        let mut minifb_tile: [[u32; 8]; 8] = [[0; 8]; 8];
+    pub fn raster_tile(&self, mmu: &MMU, tile: [u8; 16]) -> Vec<u32> {
+        let mut minifb_tile = vec![0; 64];
         for i in (0..tile.len()).step_by(2) {
             let pixel_part_1 = tile[i];
             let pixel_part_2 = tile[i + 1];
@@ -114,7 +181,8 @@ impl PPU {
                 // Transforma en color MINIFB
                 let minifb = self.transform_from_bgp_to_minifb_color(bgp_palette);
 
-                minifb_tile[i / 2][j] = minifb;
+                //minifb_tile[i / 2][7 - j] = minifb;
+                minifb_tile[(i / 2 * 8) + (7 - j) as usize] = minifb;
             }
         }
 
