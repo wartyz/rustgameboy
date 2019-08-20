@@ -12,9 +12,11 @@ use crate::ppu::PPU;
 use std::fmt;
 
 pub struct MMU {
-    ram: [u8; 65_536],
     //0x0000 to 0xFFFF
+    ram: [u8; 65_536],
+
     boot_rom: [u8; 256],
+    //pub ppu: PPU,
     pub dirty_vram_flag: bool,
     pub dirty_viewport_flag: bool,
 }
@@ -68,22 +70,12 @@ impl MMU {
             ram: [0; 65_536],
             boot_rom: *include_bytes!("../ROMS/DMG_ROM.bin"), // Lee el fichero ROM
             dirty_vram_flag: false,
-            dirty_viewport_flag: false,
+            dirty_viewport_flag: false, //ppu: PPU::new(),
         };
         mmu
     }
 
     pub fn write_byte(&mut self, address: u16, value: u8) {
-        self.ram[address as usize] = value;
-
-        let ppu = &mut self.ppu;
-        if address >= 0x8000 && address < 0x9800 {
-            // I need to rasterize the tile being changeds
-
-            // start rasterizing the entire tileset and later refactor
-            // @TODO rasterize only the tile being changed
-            ppu.rasterize_entire_tile_set(&self);
-        }
         self.ram[address as usize] = value;
         if address >= 0x8000 && address < 0xA000 {
             self.dirty_vram_flag = true;

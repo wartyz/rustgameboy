@@ -5,6 +5,7 @@ pub enum Instruction {
     LdBc(u16),
     LdDe(u16),
     LdHl(u16),
+    LdHln(u8),
     LdSp(u16),
 
     LdA(u8),
@@ -34,6 +35,7 @@ pub enum Instruction {
 
     LddHlA,
     LdiHlA,
+    LdiAHl,
 
     LdABc,
     LdADe,
@@ -72,6 +74,8 @@ pub enum Instruction {
     JrNc(i8),
     JrC(i8),
 
+    Jp(u16),
+
     IncA,
     IncB,
     IncC,
@@ -90,7 +94,7 @@ pub enum Instruction {
     CallNz(u16),
     CallZ(u16),
     CallNc(u16),
-    Callc(u16),
+    CallC(u16),
 
     PushAf,
     PushBc,
@@ -131,6 +135,16 @@ pub enum Instruction {
     SubHl,
     Sub(u8),
 
+    AddAa,
+    AddAb,
+    AddAc,
+    AddAd,
+    AddAe,
+    AddAh,
+    AddAl,
+    AddAhl,
+    AddA(u8),
+
     Ret,
 
     CpA,
@@ -140,7 +154,9 @@ pub enum Instruction {
     CpE,
     CpH,
     CpL,
-    CpHL,
+    CpHl,
     Cp(u8),
-}
 
+    Di,
+    Ei,
+}

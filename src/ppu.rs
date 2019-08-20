@@ -5,6 +5,8 @@ const HEIGHT: usize = 256;
 
 pub const SCREEN_WIDTH: usize = 160;
 pub const SCREEN_HEIGHT: usize = 144;
+//pub const SCREEN_WIDTH: usize = 256;
+//pub const SCREEN_HEIGHT: usize = 256;
 
 //Colores ALPHA,R,G,B
 pub const DARKEST_GREEN: u32 = 0xFF0F380F;
@@ -25,7 +27,7 @@ impl PPU {
             mode: 0,
             background_buffer: vec![LIGHTEST_GREEN; WIDTH * HEIGHT], // Un tile = 64 pixels
             mode_clock: 0,
-            viewport: vec![LIGHTEST_GREEN; WIDTH * HEIGHT],
+            viewport: vec![LIGHTEST_GREEN; SCREEN_WIDTH * SCREEN_HEIGHT],
         };
 
         ppu
@@ -52,13 +54,31 @@ impl PPU {
         mmu.read_byte(0xFF43)
     }
 
+    pub fn get_ly(&self, mmu: &MMU) -> u8 {
+        mmu.read_byte(0xFF44)
+    }
+
+    pub fn get_lyc(&self, mmu: &MMU) -> u8 {
+        mmu.read_byte(0xFF45)
+    }
+
+    pub fn get_viewport(&self) -> &Vec<u32> {
+        &self.viewport
+    }
+
     /// Comprueba si el bit de activación de lcd está activado
     pub fn is_lcd_enable(&self, mmu: &MMU) -> bool {
         (self.get_lcdc(mmu) & 0b1000_0000) != 0
     }
 
-    pub fn get_tile_set(&self, mmu: &MMU) -> &Vec<u32> {
-        &self.rasterized_tile_set
+    pub fn get_tile_set(&self, mmu: &MMU) -> [[u8; 16]; 256] {
+        // @TODO check LCDC
+        let mut tile_set = [[0; 16]; 256];
+
+        for i in 0..256 {
+            tile_set[i] = self.get_tile(&mmu, (0x8000 + (i * 16)) as u16);
+        }
+        tile_set
     }
 
     pub fn get_tile_map(&self, mmu: &MMU) -> [u8; 1_024] {
@@ -78,49 +98,36 @@ impl PPU {
         tile
     }
 
-    pub fn transform_background_buffer_into_screen(&self, mmu: &MMU) -> Vec<u32> {
+    pub fn transform_background_buffer_into_screen(&mut self, mmu: &MMU) {
         let scx = self.get_scx(mmu) as usize;
         let scy = self.get_scy(mmu) as usize;
-
         //        let scx = 0;
-        //        let scy = 0;
+        //        let scy = 70;
 
-        let mut viewport = vec![LIGHTEST_GREEN; SCREEN_WIDTH * SCREEN_HEIGHT]; // 160 x 144 = 23040
-        let mut i = 0;
-        //self.populate_background_buffer(mmu);
-        for (m, minifb_tile) in self.background_buffer.iter().enumerate() {
-            let line = m / WIDTH;
-            let column = m % WIDTH;
-            if line >= scy && line < (scy + 144) && column >= scx && column < (scx + 160) {
-                viewport[i] = *minifb_tile;
-                i += 1;
-            }
-        }
-        viewport
+        self.viewport = self
+            .background_buffer
+            .iter()
+            .enumerate()
+            .filter(|(m, _)| {
+                let line = m / WIDTH;
+                let column = m % WIDTH;
+                line >= scy && line < (scy + 144) && column >= scx && column < (scx + 160)
+            })
+            .map(|(_, minifb_tile)| *minifb_tile)
+            .collect();
     }
 
-    pub fn rasterize_entire_tile_set(&mut self, mmu: &MMU) {
-        for i in 0..8192 {
-            let tile = self.get_tile(mmu, 0x8000 + i);
-            let rasterized_tile = self.raster_tile(mmu, tile);
-            for (j, reaterized_pixel) in rasterized_tile.iter().enumerate() {
-                self.rasterized_tile_set[i as usize] = *reaterized_pixel;
-            }
-        }
-    }
     /// Rellena el buffer gráfico de 256 X 256 pixels
     pub fn populate_background_buffer(&mut self, mmu: &MMU) {
         // Obtenemos el conjunto de tiles
-        //let tile_set = self.get_tile_set(mmu);
+        let tile_set = self.get_tile_set(mmu);
         // Obtenemos el mapa de tiles
         let tile_map = self.get_tile_map(mmu);
         // Rellenamos background_buffer según tile_map y lo transformamos a tile minifb
         for (t, tile_map_item) in tile_map.iter().enumerate() {
-            let rasterized_tile_set_index = (*tile_map_item as usize - 0x8000) as usize;
-            let tile =
-                self.rasterized_tile_set[rasterized_tile_set_index..rasterized_tile_set_index + 9];
-            //let minifb_tile = self.transform_tile_to_minifb_tile(mmu, tile);
-            for (i, pixel) in tile.iter().enumerate() {
+            let tile = tile_set[*tile_map_item as usize];
+            let minifb_tile = self.transform_tile_to_minifb_tile(mmu, tile);
+            for (i, pixel) in minifb_tile.iter().enumerate() {
                 let h_offset = (i % 8) + ((t % 32) * 8);
                 let v_offset = ((i / 8) + (t / 32) * 8) * WIDTH;
                 self.background_buffer[h_offset + v_offset] = *pixel;
@@ -159,7 +166,7 @@ impl PPU {
     }
 
     /// Convierte tile en un arreglo de bits ARGB para que lo entienda minifb
-    pub fn raster_tile(&self, mmu: &MMU, tile: [u8; 16]) -> Vec<u32> {
+    pub fn transform_tile_to_minifb_tile(&self, mmu: &MMU, tile: [u8; 16]) -> Vec<u32> {
         let mut minifb_tile = vec![0; 64];
         for i in (0..tile.len()).step_by(2) {
             let pixel_part_1 = tile[i];
@@ -237,6 +244,17 @@ impl PPU {
             current_stat = current_stat | stat_bit_0_to_2;
             // set registro STAT
             mmu.write_byte(0xFF41, current_stat);
+            if self.mode == 2 {
+                if mmu.dirty_vram_flag {
+                    self.populate_background_buffer(mmu);
+                    self.transform_background_buffer_into_screen(mmu);
+                    mmu.dirty_vram_flag = false;
+                }
+                if mmu.dirty_viewport_flag {
+                    self.transform_background_buffer_into_screen(mmu);
+                    mmu.dirty_viewport_flag = false;
+                }
+            }
         }
     }
 }

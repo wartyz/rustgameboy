@@ -1,9 +1,7 @@
 use crate::instruction::Instruction;
 use crate::mmu::MMU;
-//use crate::ppu::PPU;
-
 use crate::ppu::PPU;
-use std::cell::RefMut;
+
 use std::fmt;
 
 //#[derive(Debug)]
@@ -22,6 +20,8 @@ pub struct CPU {
     t: usize,
     //m -> machine cycles
     m: usize,
+    // Interrupcion
+    ime: bool,
     last_t: usize,
     last_m: usize,
     debug: bool,
@@ -33,7 +33,7 @@ impl fmt::Debug for CPU {
             f,
             "CPU \n{{A: {:#X}, B: {:#X}, C: {:#X}, D: {:#X}, E: {:#X}, H: {:#X}, L: {:#X}}} \
              \nflags-> {{Z: {:?}, N: {:?}, H: {:?}, C: {:?}}}\
-             \n{{PC: {:#X}, SP: {:#X}}}\n",
+             \n{{PC: {:#X}, SP: {:#X}}}  ime->{}\n",
             self.a,
             self.b,
             self.c,
@@ -46,7 +46,8 @@ impl fmt::Debug for CPU {
             self.get_h_flag(),
             self.get_c_flag(),
             self.pc,
-            self.sp
+            self.sp,
+            self.ime,
         )
     }
 }
@@ -66,6 +67,7 @@ impl CPU {
             sp: 0,
             t: 0,
             m: 0,
+            ime: false,
             last_t: 0,
             last_m: 0,
             debug: false,
@@ -87,7 +89,7 @@ impl CPU {
     fn get_flag(&self, bit_mask: u8) -> bool {
         (self.f & bit_mask) != 0
     }
-    // Funciones GET de FLAGS
+    // Funciones GET de FLAGS TODO: Estan mal los bits de los flags
     fn get_z_flag(&self) -> bool {
         self.get_flag(0b1000_0000)
     }
@@ -209,7 +211,7 @@ impl CPU {
         new_register_value
     }
 
-    fn do_sum(&mut self, register_value_a: u8, register_value_b: u8) -> u8 {
+    fn do_add(&mut self, register_value_a: u8, register_value_b: u8) -> u8 {
         // Probar si hay acarreo de medio byte
         if self.calc_half_carry_on_u8_sum(register_value_a, register_value_b) {
             self.set_h_flag();
@@ -233,7 +235,7 @@ impl CPU {
     }
 
     fn do_inc_n(&mut self, register_value: u8) -> u8 {
-        self.do_sum(register_value, 1)
+        self.do_add(register_value, 1)
     }
 
     fn do_sub(&mut self, register_value_a: u8, register_value_b: u8) -> u8 {
@@ -318,23 +320,22 @@ impl CPU {
         let cb_d16: u16 = (cb_n2 << 8) | cb_n1;
 
         match byte {
+            0x00 => Instruction::Nop,
+            0xF3 => Instruction::Di,
+            0xFB => Instruction::Ei,
             0x01 => Instruction::LdBc(d16),
             0x11 => Instruction::LdDe(d16),
             0x21 => Instruction::LdHl(d16),
             0x31 => Instruction::LdSp(d16),
-
             0xE0 => Instruction::LdFf00U8a(n1 as u8),
             0xF0 => Instruction::LdAFf00U8(n1 as u8),
-
             0xE2 => Instruction::LdFf00Ca,
-
             0x18 => Instruction::Jr(n1 as i8),
-
             0x20 => Instruction::JrNz(n1 as i8),
             0x28 => Instruction::JrZ(n1 as i8),
             0x30 => Instruction::JrNc(n1 as i8),
             0x38 => Instruction::JrC(n1 as i8),
-
+            0xC3 => Instruction::Jp(d16),
             0x3E => Instruction::LdA(n1 as u8),
             0x06 => Instruction::LdB(n1 as u8), // LD nn,n
             0x0E => Instruction::LdC(n1 as u8),
@@ -342,7 +343,6 @@ impl CPU {
             0x1E => Instruction::LdE(n1 as u8),
             0x26 => Instruction::LdH(n1 as u8),
             0x2E => Instruction::LdL(n1 as u8),
-
             0x7F => Instruction::LdAa,
             0x47 => Instruction::LdBa,
             0x4F => Instruction::LdCa,
@@ -350,24 +350,20 @@ impl CPU {
             0x5F => Instruction::LdEa,
             0x67 => Instruction::LdHa,
             0x6F => Instruction::LdLa,
-
+            0x77 => Instruction::LdHlA,
+            0x36 => Instruction::LdHln(n1 as u8),
             0x1A => Instruction::LdADe,
             0x0A => Instruction::LdABc,
-
             0x78 => Instruction::LdAb,
             0x79 => Instruction::LdAc,
             0x7A => Instruction::LdAd,
             0x7B => Instruction::LdAe,
             0x7C => Instruction::LdAh,
             0x7D => Instruction::LdAl,
-
-            0x77 => Instruction::LdHlA,
-
             0xEA => Instruction::LdXxA(d16),
-
             0x32 => Instruction::LddHlA,
             0x22 => Instruction::LdiHlA,
-
+            0x2A => Instruction::LdiAHl,
             0xAF => Instruction::XorA,
             0xA8 => Instruction::XorB,
             0xA9 => Instruction::XorC,
@@ -376,7 +372,6 @@ impl CPU {
             0xAC => Instruction::XorH,
             0xAD => Instruction::XorL,
             0xAE => Instruction::XorHL,
-
             0x3C => Instruction::IncA,
             0x04 => Instruction::IncB,
             0x0C => Instruction::IncC,
@@ -389,11 +384,9 @@ impl CPU {
             0x23 => Instruction::IncHlNoflags,
             // TODO: Posible error INC (HL)
             0x34 => Instruction::IncHl,
-
             0x13 => Instruction::IncDe,
             0x03 => Instruction::IncBc,
             0x33 => Instruction::IncSp,
-
             0x3D => Instruction::DecA,
             0x05 => Instruction::DecB,
             0x0D => Instruction::DecC,
@@ -402,7 +395,6 @@ impl CPU {
             0x25 => Instruction::DecH,
             0x2D => Instruction::DecL,
             0x35 => Instruction::DecHl,
-
             0x97 => Instruction::SubA,
             0x90 => Instruction::SubB,
             0x91 => Instruction::SubC,
@@ -412,14 +404,21 @@ impl CPU {
             0x95 => Instruction::SubL,
             0x96 => Instruction::SubHl,
             0xD6 => Instruction::Sub(n1 as u8),
-
+            0x87 => Instruction::AddAa,
+            0x80 => Instruction::AddAb,
+            0x81 => Instruction::AddAc,
+            0x82 => Instruction::AddAd,
+            0x83 => Instruction::AddAe,
+            0x84 => Instruction::AddAh,
+            0x85 => Instruction::AddAl,
+            0x86 => Instruction::AddAhl,
+            0xC6 => Instruction::AddA(n1 as u8),
             0xC4 => Instruction::CallNz(d16),
             0xD4 => Instruction::CallNc(d16),
             0xCC => Instruction::CallZ(d16),
-            0xDC => Instruction::Callc(d16),
+            0xDC => Instruction::CallC(d16),
             0xCD => Instruction::Call(d16),
             0xC9 => Instruction::Ret,
-
             0xF5 => Instruction::PushAf,
             0xC5 => Instruction::PushBc,
             0xD5 => Instruction::PushDe,
@@ -428,9 +427,7 @@ impl CPU {
             0xC1 => Instruction::PopBc,
             0xD1 => Instruction::PopDe,
             0xE1 => Instruction::PopHl,
-
             0x17 => Instruction::RLA,
-
             0xBF => Instruction::CpA,
             0xB8 => Instruction::CpB,
             0xB9 => Instruction::CpC,
@@ -438,9 +435,8 @@ impl CPU {
             0xBB => Instruction::CpE,
             0xBC => Instruction::CpH,
             0xBD => Instruction::CpL,
-            0xBE => Instruction::CpHL,
+            0xBE => Instruction::CpHl,
             0xFE => Instruction::Cp(n1 as u8),
-
             0xCB => { // Opcode especial
                 match cb_opcode {
                     0x40 => Instruction::BitbB(0b0000_0001),
@@ -499,7 +495,6 @@ impl CPU {
             }
 
             0xEE => Instruction::Xor(n1 as u8),
-
             _ => panic!(
                 "\nESTADO DE MMU: {:?} \nESTADO CPU: {:?}\nDECODIFICACION: byte no reconocido {:#X} en PC {:#X}",
                 mmu, self, byte, self.pc,
@@ -534,6 +529,7 @@ impl CPU {
             "l" => {
                 self.l = register_value;
             }
+
             _ => {
                 panic!(
                     "función set_register: Registro {:?} no conocido",
@@ -582,6 +578,26 @@ impl CPU {
         }
 
         match instruction {
+            Instruction::Nop => {
+                self.pc += 1;
+
+                self.t += 4;
+                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
+            }
+            Instruction::Di => {
+                self.ime = false;
+                self.pc += 1;
+
+                self.t += 4;
+                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
+            }
+            Instruction::Ei => {
+                self.ime = true;
+                self.pc += 1;
+
+                self.t += 4;
+                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
+            }
             Instruction::LdA(n) => {
                 if self.debug {
                     println!("LD A, n: {:#X}", *n);
@@ -721,6 +737,14 @@ impl CPU {
             Instruction::LdLa => {
                 self.do_ld_reg_to_reg("l", "a");
             }
+            Instruction::LdHln(n) => {
+                let h16 = (self.h as u16) << 8;
+                let hl: u16 = h16 | (self.l as u16);
+                mmu.write_byte(hl, *n);
+                self.pc += 2;
+                self.t += 12;
+                self.m += 3;
+            }
             Instruction::LdADe => {
                 if self.debug {
                     println!(
@@ -735,12 +759,6 @@ impl CPU {
 
                 self.t += 8;
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-                if self.debug {
-                    println!(
-                        "LD A(DE) despues,   A: {:#X} D: {:#X}, E: {:#X}",
-                        self.a, self.d, self.e
-                    );
-                }
             }
 
             Instruction::LdAb => {
@@ -782,13 +800,6 @@ impl CPU {
 
                 self.t += 8;
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.debug {
-                    println!(
-                        "LD (HL),A despues, A: {:#X} H: {:#X}, L: {:#X}",
-                        self.a, self.h, self.l
-                    );
-                }
             }
 
             Instruction::LdXxA(d16) => {
@@ -835,10 +846,7 @@ impl CPU {
 
             Instruction::LdiHlA => {
                 if self.debug {
-                    println!(
-                        "LD (HL+),A antes,   A: {:#X} H: {:#X}, L: {:#X}",
-                        self.a, self.h, self.l
-                    );
+                    println!("LD (HL+),A");
                 }
                 let h16 = (self.h as u16) << 8;
                 let mut hl: u16 = h16 | (self.l as u16);
@@ -853,15 +861,25 @@ impl CPU {
 
                 self.t += 8;
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.debug {
-                    println!(
-                        "LD (HL+),A despues, A: {:#X} H: {:#X}, L: {:#X}",
-                        self.a, self.h, self.l
-                    );
-                }
             }
+            Instruction::LdiAHl => {
+                if self.debug {
+                    println!("LD A,(HL+)");
+                }
+                let h16 = (self.h as u16) << 8;
+                let mut hl: u16 = h16 | (self.l as u16);
+                self.a = mmu.read_byte(hl);
 
+                hl = hl.wrapping_add(1);
+
+                self.h = ((hl & 0xFF00) >> 8) as u8;
+                self.l = (hl & 0x00FF) as u8;
+
+                self.pc += 1;
+
+                self.t += 8;
+                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+            }
             Instruction::LdFf00U8a(n) => {
                 if self.debug {
                     println!("LD ($FF00+u8),A     n:u8 {:#X}", n);
@@ -1085,14 +1103,20 @@ impl CPU {
                 if self.debug {
                     println!("JR n: {:#X}", n);
                 }
-                self.pc = self.pc + 2; //TODO: ERROR No sirve para nada
+                self.pc = self.pc + 2;
                 self.pc = self.pc.wrapping_add(*n as u16);
                 self.t += 12;
                 self.m += 3;
+            }
 
-                //self.pc = self.pc.wrapping_add(*n as u16);
-                self.t += 12;
-                self.m += 3; //TODO: Creo que teniendo los t states es suficiente
+            Instruction::Jp(d16) => {
+                if self.debug {
+                    println!("JP nn: {:#X}", d16);
+                }
+                self.pc = *d16;
+
+                self.t += 16;
+                self.m += 4;
             }
 
             Instruction::IncA => {
@@ -1143,7 +1167,7 @@ impl CPU {
             }
 
             Instruction::IncHl => {
-                // TODO: ERROR direccion indirecta (no lo ha mirado bien)
+                // TODO: ERROR direccion indirecta (no lo ha mirado bien) y falta cambio PC
                 if self.debug {
                     println!("INC (HL)");
                 }
@@ -1283,6 +1307,62 @@ impl CPU {
                 };
                 self.a = self.do_sub(self.a, self.l);
             }
+            Instruction::AddAa => {
+                if self.debug {
+                    println!("ADD A,A")
+                };
+                self.a = self.do_add(self.a, self.a);
+            }
+            Instruction::AddAb => {
+                if self.debug {
+                    println!("ADD A,B")
+                };
+                self.a = self.do_add(self.a, self.b);
+            }
+
+            Instruction::AddAc => {
+                if self.debug {
+                    println!("ADD A,C")
+                };
+                self.a = self.do_add(self.a, self.c);
+            }
+            Instruction::AddAd => {
+                if self.debug {
+                    println!("ADD A,D")
+                };
+                self.a = self.do_add(self.a, self.d);
+            }
+            Instruction::AddAe => {
+                if self.debug {
+                    println!("ADD A,E")
+                };
+                self.a = self.do_add(self.a, self.e);
+            }
+            Instruction::AddAh => {
+                if self.debug {
+                    println!("ADD A,H")
+                };
+                self.a = self.do_add(self.a, self.h);
+            }
+
+            Instruction::AddAl => {
+                if self.debug {
+                    println!("ADD A,L")
+                };
+                self.a = self.do_add(self.a, self.l);
+            }
+
+            Instruction::AddAhl => {
+                if self.debug {
+                    println!("ADD A,(HL)");
+                }
+
+                let h16 = (self.h as u16) << 8;
+                let hl: u16 = h16 | (self.l as u16);
+
+                self.a = self.do_add(self.a, mmu.read_byte(hl));
+            }
+
             Instruction::Call(d16) => {
                 if self.debug {
                     println!("CALL d16: {:#X}", d16);
@@ -1314,7 +1394,7 @@ impl CPU {
                 self.push_to_stack(mmu, af);
                 self.pc += 1;
 
-                self.t += 24;
+                self.t += 16;
                 self.m += 6; //TODO: Creo que teniendo los t states es suficiente
             }
 
@@ -1327,7 +1407,7 @@ impl CPU {
                 self.push_to_stack(mmu, bc);
                 self.pc += 1;
 
-                self.t += 24;
+                self.t += 16;
                 self.m += 6; //TODO: Creo que teniendo los t states es suficiente
             }
 
@@ -1340,7 +1420,7 @@ impl CPU {
                 self.push_to_stack(mmu, de);
                 self.pc += 1;
 
-                self.t += 24;
+                self.t += 16;
                 self.m += 6; //TODO: Creo que teniendo los t states es suficiente
             }
 
@@ -1353,7 +1433,7 @@ impl CPU {
                 self.push_to_stack(mmu, hl);
                 self.pc += 1;
 
-                self.t += 24;
+                self.t += 16;
                 self.m += 6; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::PopAf => {
@@ -1361,7 +1441,7 @@ impl CPU {
                     println!("POP AF");
                 }
                 let addr: u16 = self.pop_from_stack(mmu);
-                let a = ((addr & 0xFF00) >> 8) as u8;
+                self.a = ((addr & 0xFF00) >> 8) as u8;
                 self.f = (addr & 0x00FF) as u8;
 
                 self.pc += 1;
@@ -1374,7 +1454,7 @@ impl CPU {
                     println!("POP DE");
                 }
                 let addr: u16 = self.pop_from_stack(mmu);
-                let d = ((addr & 0xFF00) >> 8) as u8;
+                self.d = ((addr & 0xFF00) >> 8) as u8;
                 self.e = (addr & 0x00FF) as u8;
 
                 self.pc += 1;
@@ -1387,7 +1467,7 @@ impl CPU {
                     println!("POP HL");
                 }
                 let addr: u16 = self.pop_from_stack(mmu);
-                let h = ((addr & 0xFF00) >> 8) as u8;
+                self.h = ((addr & 0xFF00) >> 8) as u8;
                 self.l = (addr & 0x00FF) as u8;
 
                 self.pc += 1;
@@ -1401,7 +1481,7 @@ impl CPU {
                     println!("POP BC");
                 }
                 let addr: u16 = self.pop_from_stack(mmu);
-                let b = ((addr & 0xFF00) >> 8) as u8;
+                self.b = ((addr & 0xFF00) >> 8) as u8;
                 self.c = (addr & 0x00FF) as u8;
 
                 self.pc += 1;
@@ -1503,7 +1583,7 @@ impl CPU {
                 }
                 let _ = self.do_sub(self.a, self.l);
             }
-            Instruction::CpHL => {
+            Instruction::CpHl => {
                 if self.debug {
                     println!("CP (HL)");
                 }
@@ -1511,7 +1591,7 @@ impl CPU {
                 let h16 = (self.h as u16) << 8;
                 let hl: u16 = h16 | (self.l as u16);
                 let _ = self.do_sub(self.a, mmu.read_byte(hl));
-                self.pc += 1;
+                //self.pc += 1; TODO: No lo ha puesto
 
                 self.t += 24;
                 self.m += 6; //TODO: Creo que teniendo los t states es suficiente
@@ -1521,6 +1601,7 @@ impl CPU {
                 if self.debug {
                     println!("CP n:  {:#X}", n);
                 }
+                let ly = mmu.read_byte(0xFF44);
                 //mmu.write_byte(0xFF44, mmu.read_byte(0xFF44) + 0x01);
                 //println!("{}", mmu.read_byte(0xFF44));
                 let _ = self.do_sub(self.a, *n);
@@ -1538,7 +1619,7 @@ impl CPU {
         }
     }
 
-    pub fn run_instruction(&mut self, mmu: &mut MMU, ppu: RefMut<PPU>) {
+    pub fn run_instruction(&mut self, mmu: &mut MMU, ppu: &mut PPU) {
         self.last_m = self.m; // TODO: ¿REDUNDANTE?
         self.last_t = self.t; // TODO: ¿REDUNDANTE?
                               // Obtener instrucción:
