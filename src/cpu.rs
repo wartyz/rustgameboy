@@ -561,267 +561,201 @@ impl CPU {
 
     /// Copia el valor de un registro llamado from a otro llamado to
     fn do_ld_reg_to_reg(&mut self, to: &str, from: &str) {
-        // Pongo yo uppercase
-        if self.debug {
-            println!("LD {:?},{:?}", to.to_ascii_uppercase(), from.to_uppercase())
-        }
         self.set_register(to, self.get_register(from));
 
-        self.pc += 1;
-        self.t += 4;
-        self.m += 1;
+        self.inc_pc_t(1, 4);
     }
 
-    fn execute(&mut self, instruction: &Instruction, mmu: &mut MMU) {
-        if self.debug {
-            println!("Ejecutando PC: {:#X}", self.pc);
-        }
+    fn inc_pc_t(&mut self, pc: u16, t: usize) {
+        self.pc += pc;
+        self.t += t;
+    }
 
-        match instruction {
-            Instruction::Nop => {
-                self.pc += 1;
+    fn execute(&mut self, byte: u8, mmu: &mut MMU) {
+        // Preparar variables especiales
+        // El valor inmediato de 16 bits
+        let n1 = mmu.read_byte(self.pc + 1) as u16;
+        let n2 = mmu.read_byte(self.pc + 2) as u16;
 
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
+        // Invirtiendo posición ya que es BIG ENDIAN
+        let d16: u16 = (n2 << 8) | n1;
+
+        // En caso de prefijo CB, n1 es un OPCODE
+        let cb_opcode = n1;
+        // En caso de prefijo CB, n2 es n1
+        let cb_n1 = n2;
+        let cb_n2 = mmu.read_byte(self.pc + 3) as u16;
+        // Invirtiendo posición ya que es BIG ENDIAN
+        let cb_d16: u16 = (cb_n2 << 8) | cb_n1;
+
+        match byte {
+            0x00 => {
+                // Nop
+                self.inc_pc_t(1, 4);
             }
-            Instruction::Di => {
+            0xF3 => {
+                // Di
                 self.ime = false;
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(1, 4);
             }
-            Instruction::Ei => {
+            0xFB => {
+                // Ei
                 self.ime = true;
-                self.pc += 1;
-
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(1, 4);
             }
-            Instruction::LdA(n) => {
-                if self.debug {
-                    println!("LD A, n: {:#X}", *n);
-                }
-                self.a = *n;
-                self.pc += 2;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+            0x3E => {
+                // LdA(n)
+                self.a = n1 as u8;
+                self.inc_pc_t(2, 8);
             }
-            Instruction::LdB(n) => {
-                if self.debug {
-                    println!("LD B, n: {:#X}", *n);
-                }
-                self.b = *n;
-                self.pc += 2;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+            0x06 => {
+                // LdB(n)
+                self.b = n1 as u8;
+                self.inc_pc_t(2, 8);
             }
-            Instruction::LdC(n) => {
-                if self.debug {
-                    println!("LD C, n: {:#X}", *n);
-                }
-                self.c = *n;
-                self.pc += 2;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+            0x16 => {
+                // LdD(n)
+                self.d = n1 as u8;
+                self.inc_pc_t(2, 8);
             }
-            Instruction::LdD(n) => {
-                if self.debug {
-                    println!("LD D, n: {:#X}", *n);
-                }
-                self.d = *n;
-                self.pc += 2;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::LdE(n) => {
-                if self.debug {
-                    println!("LD E, n: {:#X}", *n);
-                }
-                self.e = *n;
-                self.pc += 2;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::LdH(n) => {
-                if self.debug {
-                    println!("LD H, n: {:#X}", *n);
-                }
-                self.h = *n;
-                self.pc += 2;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::LdL(n) => {
-                if self.debug {
-                    println!("LDC, n: {:#X}", *n);
-                }
-                self.l = *n;
-                self.pc += 2;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::LdSp(d16) => {
-                if self.debug {
-                    println!("LD SP, d16: {:#X}", d16);
-                }
-                self.sp = *d16; // LD SP,d16
-                self.pc += 3;
-
-                self.t += 12;
-                self.m += 3; //TODO: Creo que teniendo los t states es suficiente
+            0x1E => {
+                // LdE(n)
+                self.e = n1 as u8;
+                self.inc_pc_t(2, 8);
             }
 
-            Instruction::LdBc(d16) => {
-                if self.debug {
-                    println!("LD BC, d16 {:#X}", d16);
-                }
+            0x0E => {
+                // LdC(n)
+                self.c = n1 as u8;
+                self.inc_pc_t(2, 8);
+            }
+
+            0x26 => {
+                // LdH(n)
+                self.h = n1 as u8;
+                self.inc_pc_t(2, 8);
+            }
+            0x2E => {
+                // LdL(n)
+                self.l = n1 as u8;
+                self.inc_pc_t(2, 8);
+            }
+            0x31 => {
+                // LdSp(d16)
+                self.sp = d16;
+                self.inc_pc_t(3, 12);
+            }
+
+            0x01 => {
+                // LdBc(d16)
                 self.b = ((d16 & 0xFF00) >> 8) as u8;
                 self.c = (d16 & 0x00FF) as u8;
-                self.pc += 3;
-                self.t += 12;
-                self.m += 3; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(3, 12);
             }
 
-            Instruction::LdDe(d16) => {
-                if self.debug {
-                    println!("LD DE, d16 {:#X}", d16);
-                }
+            0x11 => {
+                //LdDe(d16)
                 self.d = ((d16 & 0xFF00) >> 8) as u8;
                 self.e = (d16 & 0x00FF) as u8;
-                self.pc += 3;
-
-                self.t += 12;
-                self.m += 3; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(3, 12);
             }
 
-            Instruction::LdHl(d16) => {
-                if self.debug {
-                    println!("LD HL, d16 {:#X}", d16);
-                }
+            0x21 => {
+                //LdHl(d16)
                 self.h = ((d16 & 0xFF00) >> 8) as u8;
                 self.l = (d16 & 0x00FF) as u8;
-                if self.debug {
-                    println!("LD HL despues, H: {:#X}, L: {:#X}", self.h, self.l);
-                }
-                self.pc += 3;
-
-                self.t += 12;
-                self.m += 3; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(3, 12);
             }
-            Instruction::LdAa => {
+            0x7F => {
+                //LdAa
                 self.do_ld_reg_to_reg("a", "a");
             }
-            Instruction::LdBa => {
+            0x47 => {
+                //LdBa
                 self.do_ld_reg_to_reg("b", "a");
             }
-            Instruction::LdCa => {
+            0x4F => {
+                //LdCa
                 self.do_ld_reg_to_reg("c", "a");
             }
-            Instruction::LdDa => {
+            0x57 => {
+                //LdDa
                 self.do_ld_reg_to_reg("d", "a");
             }
-            Instruction::LdEa => {
+            0x5F => {
+                //LdEa
                 self.do_ld_reg_to_reg("e", "a");
             }
-            Instruction::LdHa => {
+            0x67 => {
+                //LdHa
                 self.do_ld_reg_to_reg("h", "a");
             }
-            Instruction::LdLa => {
+            0x6F => {
+                //LdLa
                 self.do_ld_reg_to_reg("l", "a");
             }
-            Instruction::LdHln(n) => {
+            0x36 => {
+                //LdHln
                 let h16 = (self.h as u16) << 8;
                 let hl: u16 = h16 | (self.l as u16);
-                mmu.write_byte(hl, *n);
-                self.pc += 2;
-                self.t += 12;
-                self.m += 3;
+                mmu.write_byte(hl, n1 as u8);
+                self.inc_pc_t(2, 12);
             }
-            Instruction::LdADe => {
-                if self.debug {
-                    println!(
-                        "LD A(DE) antes,     A: {:#X} D: {:#X}, E: {:#X}",
-                        self.a, self.d, self.e
-                    );
-                }
+            0x1A => {
+                //LdADe
                 let d16 = (self.d as u16) << 8;
                 let de: u16 = d16 | (self.e as u16);
                 self.a = mmu.read_byte(de);
-                self.pc += 1;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(1, 8);
             }
 
-            Instruction::LdAb => {
+            0x78 => {
+                //LdAb
                 self.do_ld_reg_to_reg("a", "b");
             }
 
-            Instruction::LdAc => {
+            0x79 => {
+                //LdAc
                 self.do_ld_reg_to_reg("a", "c");
             }
 
-            Instruction::LdAd => {
+            0x7A => {
+                //LdAd
                 self.do_ld_reg_to_reg("a", "d");
             }
 
-            Instruction::LdAe => {
+            0x7B => {
+                //LdAe
                 self.do_ld_reg_to_reg("a", "e");
             }
 
-            Instruction::LdAh => {
+            0x7C => {
+                //LdAh
                 self.do_ld_reg_to_reg("a", "h");
             }
 
-            Instruction::LdAl => {
+            0x7D => {
+                //LdAl
                 self.do_ld_reg_to_reg("a", "l");
             }
 
-            Instruction::LdHlA => {
-                if self.debug {
-                    println!(
-                        "LD (HL),A antes,   A: {:#X} H: {:#X}, L: {:#X}",
-                        self.a, self.h, self.l
-                    );
-                }
+            0x77 => {
+                //LdHlA
                 let h16 = (self.h as u16) << 8;
                 let hl: u16 = h16 | (self.l as u16);
                 mmu.write_byte(hl, self.a);
 
-                self.pc += 1;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(1, 8);
             }
 
-            Instruction::LdXxA(d16) => {
-                if self.debug {
-                    println!("LD (XX),A     XX: {:#X}", d16);
-                }
-
-                mmu.write_byte(*d16, self.a);
-
-                self.pc += 3;
-
-                self.t += 16;
-                self.m += 4; //TODO: Creo que teniendo los t states es suficiente
+            0xEA => {
+                //LdXxA
+                mmu.write_byte(d16, self.a);
+                self.inc_pc_t(3, 16);
             }
 
-            Instruction::LddHlA => {
-                if self.debug {
-                    println!(
-                        "LD (HL-),A antes,   A: {:#X} H: {:#X}, L: {:#X}",
-                        self.a, self.h, self.l
-                    );
-                }
+            0x32 => {
+                //LddHlA
                 let h16 = (self.h as u16) << 8;
                 let mut hl: u16 = h16 | (self.l as u16);
                 mmu.write_byte(hl, self.a);
@@ -831,23 +765,12 @@ impl CPU {
                 self.h = ((hl & 0xFF00) >> 8) as u8;
                 self.l = (hl & 0x00FF) as u8;
 
-                self.pc += 1;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-
-                if self.debug {
-                    println!(
-                        "LD (HL-),A despues, A: {:#X} H: {:#X}, L: {:#X}",
-                        self.a, self.h, self.l
-                    );
-                }
+                self.inc_pc_t(1, 8);
             }
 
-            Instruction::LdiHlA => {
-                if self.debug {
-                    println!("LD (HL+),A");
-                }
+            0x22 => {
+                //LdiHlA
+
                 let h16 = (self.h as u16) << 8;
                 let mut hl: u16 = h16 | (self.l as u16);
                 mmu.write_byte(hl, self.a);
@@ -857,15 +780,10 @@ impl CPU {
                 self.h = ((hl & 0xFF00) >> 8) as u8;
                 self.l = (hl & 0x00FF) as u8;
 
-                self.pc += 1;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(1, 8);
             }
-            Instruction::LdiAHl => {
-                if self.debug {
-                    println!("LD A,(HL+)");
-                }
+            0x2A => {
+                //LdiAHl
                 let h16 = (self.h as u16) << 8;
                 let mut hl: u16 = h16 | (self.l as u16);
                 self.a = mmu.read_byte(hl);
@@ -875,66 +793,46 @@ impl CPU {
                 self.h = ((hl & 0xFF00) >> 8) as u8;
                 self.l = (hl & 0x00FF) as u8;
 
-                self.pc += 1;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(1, 8);
             }
-            Instruction::LdFf00U8a(n) => {
-                if self.debug {
-                    println!("LD ($FF00+u8),A     n:u8 {:#X}", n);
-                }
-                let addr: u16 = 0xFF00 + *n as u16;
+            0xE0 => {
+                //LdFf00U8a
+                let addr: u16 = 0xFF00 + n1;
                 mmu.write_byte(addr, self.a);
 
-                self.pc += 2;
-
-                self.t += 12;
-                self.m += 3; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(2, 12);
             }
 
-            Instruction::LdAFf00U8(n) => {
-                if self.debug {
-                    println!("LD A,($FF00+u8)     n:u8 {:#X}", n);
-                }
-                let addr: u16 = 0xFF00 + *n as u16;
+            0xF0 => {
+                //LdAFf00U8
+
+                let addr: u16 = 0xFF00 + n1 as u16;
                 self.a = mmu.read_byte(addr);
 
-                self.pc += 2;
-
-                self.t += 12;
-                self.m += 3; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(2, 12);
             }
 
-            Instruction::LdFf00Ca => {
-                if self.debug {
-                    println!("LD ($FF00+C),A     C: {:#X}", self.c);
-                }
+            0xE2 => {
+                //LdFf00Ca
+
                 let addr: u16 = 0xFF00 + self.c as u16;
                 mmu.write_byte(addr, self.a);
 
-                self.pc += 1;
-
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
+                self.inc_pc_t(1, 8);
             }
 
-            Instruction::XorA => {
-                if self.debug {
-                    println!("XorA, antes   A: {:#X} Z: {:?}", self.a, self.get_z_flag());
-                }
+            0xAF => {
+                //XorA
                 self.a ^= self.a;
                 if self.a == 0 {
                     self.set_z_flag();
                 }
-                if self.debug {
-                    println!("XorA, despues A: {:#X} Z: {:?}", self.a, self.get_z_flag());
-                }
-                self.pc += 1;
-                self.t += 4;
-                self.m += 1; //TODO: Creo que teniendo los t states es suficiente
+
+                self.inc_pc_t(1, 4);
             }
             Instruction::BitbA(bit_mask) => {
+                //BitbA
+                let bit_mask = 0b0000_0001;
                 if self.debug {
                     println!("Bit b,A   b: {:b}", bit_mask);
                 }
@@ -944,6 +842,7 @@ impl CPU {
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::BitbB(bit_mask) => {
+                //BitbB
                 if self.debug {
                     println!("Bit b,B   b: {:b}", bit_mask);
                 }
@@ -953,6 +852,7 @@ impl CPU {
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::BitbC(bit_mask) => {
+                //BitbC
                 if self.debug {
                     println!("Bit b,C   b: {:b}", bit_mask);
                 }
@@ -963,6 +863,7 @@ impl CPU {
             }
 
             Instruction::BitbD(bit_mask) => {
+                //BitbD
                 if self.debug {
                     println!("Bit b,D   b: {:b}", bit_mask);
                 }
@@ -972,6 +873,7 @@ impl CPU {
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::BitbE(bit_mask) => {
+                //BitbE
                 if self.debug {
                     println!("Bit b,E   b: {:b}", bit_mask);
                 }
@@ -981,6 +883,7 @@ impl CPU {
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::BitbH(bit_mask) => {
+                //BitbH
                 if self.debug {
                     println!("Bit b,H   b: {:b}", bit_mask);
                 }
@@ -1012,6 +915,7 @@ impl CPU {
                 self.m += 2; //TODO: Creo que teniendo los t states es suficiente
             }
             Instruction::BitbL(bit_mask) => {
+                //BitbL
                 if self.debug {
                     println!("Bit b,L   b: {:b}", bit_mask);
                 }
@@ -1602,8 +1506,6 @@ impl CPU {
                     println!("CP n:  {:#X}", n);
                 }
                 let ly = mmu.read_byte(0xFF44);
-                //mmu.write_byte(0xFF44, mmu.read_byte(0xFF44) + 0x01);
-                //println!("{}", mmu.read_byte(0xFF44));
                 let _ = self.do_sub(self.a, *n);
 
                 self.pc += 1; // (Reincrementos)
@@ -1624,10 +1526,12 @@ impl CPU {
         self.last_t = self.t; // TODO: ¿REDUNDANTE?
                               // Obtener instrucción:
         let byte = mmu.read_byte(self.pc);
+
         // Decodificar instrucción
         let instruction = self.decode(byte, mmu);
+
         // Ejecutar instrucción
-        self.execute(&instruction, mmu);
+        self.execute(byte, mmu);
 
         let current_instruction_t_clocks_passed = self.t - self.last_t; // TODO: ¿tiene sentido?
                                                                         //let lcdc = mmu.read_byte(0xFF40);
