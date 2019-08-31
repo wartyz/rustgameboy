@@ -155,7 +155,9 @@ impl CPU {
 
     // Fin de funciones de stack
 
-    fn do_bit_opcode(&mut self, bit: bool) {
+    fn do_bit_opcode(&mut self, reg_value: u8, bit_mask: u8) {
+        let bit_test: u8 = reg_value & bit_mask;
+        let bit = bit_test != bit_mask;
         if bit {
             // bit = 0
             self.set_z_flag();
@@ -165,7 +167,7 @@ impl CPU {
         self.reset_n_flag();
         self.set_h_flag();
 
-        self.pc += 2;
+        self.inc_pc_t(2, 8);
     }
 
     /// Devuelve true si hay acarreo de medio byte entre bit 11 y 12 eun un u16 en suma
@@ -294,6 +296,25 @@ impl CPU {
         self.t += 8;
         self.t += 2; // TODO: ERROR
         new_register_value
+    }
+
+    fn do_jump(&mut self, jump: bool, n1: i8) {
+        self.pc = self.pc + 2;
+        if jump {
+            self.pc = self.pc.wrapping_add(n1 as u16);
+            self.t += 12;
+        } else {
+            self.t += 8;
+        }
+    }
+    fn h_l_to_hl(&self) -> u16 {
+        let h16 = (self.h as u16) << 8;
+        h16 | (self.l as u16)
+    }
+
+    fn hl_to_h_l(&mut self, hl: u16) {
+        self.h = ((hl & 0xFF00) >> 8) as u8;
+        self.l = (hl & 0x00FF) as u8;
     }
 
     fn decode(&mut self, byte: u8, mmu: &MMU) -> Instruction {
@@ -439,42 +460,10 @@ impl CPU {
             0xFE => Instruction::Cp(n1 as u8),
             0xCB => { // Opcode especial
                 match cb_opcode {
-                    0x40 => Instruction::BitbB(0b0000_0001),
-                    0x41 => Instruction::BitbC(0b0000_0001),
-                    0x42 => Instruction::BitbD(0b0000_0001),
-                    0x43 => Instruction::BitbE(0b0000_0001),
-                    0x44 => Instruction::BitbH(0b0000_0001),
-                    0x45 => Instruction::BitbL(0b0000_0001),
                     0x46 => Instruction::BitbHL(0b0000_0001),
-                    0x47 => Instruction::BitbA(0b0000_0001),
-
-                    0x48 => Instruction::BitbB(0b0000_0010),
-                    0x49 => Instruction::BitbC(0b0000_0010),
-                    0x4A => Instruction::BitbD(0b0000_0010),
-                    0x4B => Instruction::BitbE(0b0000_0010),
-                    0x4C => Instruction::BitbH(0b0000_0010),
-                    0x4D => Instruction::BitbL(0b0000_0010),
                     0x4E => Instruction::BitbHL(0b0000_0010),
-                    0x4F => Instruction::BitbA(0b0000_0010),
-
-                    0x50 => Instruction::BitbB(0b0000_0100),
-                    0x51 => Instruction::BitbC(0b0000_0100),
-                    0x52 => Instruction::BitbD(0b0000_0100),
-                    0x53 => Instruction::BitbE(0b0000_0100),
-                    0x54 => Instruction::BitbH(0b0000_0100),
-                    0x55 => Instruction::BitbL(0b0000_0100),
                     0x56 => Instruction::BitbHL(0b0000_0100),
-                    0x57 => Instruction::BitbA(0b0000_0100),
-
-                    0x58 => Instruction::BitbB(0b0000_1000),
-                    0x59 => Instruction::BitbC(0b0000_1000),
-                    0x5A => Instruction::BitbD(0b0000_1000),
-                    0x5B => Instruction::BitbE(0b0000_1000),
-                    0x5C => Instruction::BitbH(0b0000_1000),
-                    0x5D => Instruction::BitbL(0b0000_1000),
                     0x5E => Instruction::BitbHL(0b0000_1000),
-                    0x5F => Instruction::BitbA(0b0000_1000),
-
                     0x7C => Instruction::BitbH(0b1000_0000),
 
                     0x17 => Instruction::RlA,
@@ -696,8 +685,7 @@ impl CPU {
             }
             0x36 => {
                 //LdHln
-                let h16 = (self.h as u16) << 8;
-                let hl: u16 = h16 | (self.l as u16);
+                let mut hl = self.h_l_to_hl();
                 mmu.write_byte(hl, n1 as u8);
                 self.inc_pc_t(2, 12);
             }
@@ -720,29 +708,25 @@ impl CPU {
             }
 
             0x7A => {
-                //LdAd
-                self.do_ld_reg_to_reg("a", "d");
+                self.do_ld_reg_to_reg("a", "d"); //LdAd
             }
 
             0x7B => {
-                //LdAe
-                self.do_ld_reg_to_reg("a", "e");
+                self.do_ld_reg_to_reg("a", "e"); //LdAe
             }
 
             0x7C => {
-                //LdAh
-                self.do_ld_reg_to_reg("a", "h");
+                self.do_ld_reg_to_reg("a", "h"); //LdAh
             }
 
             0x7D => {
-                //LdAl
-                self.do_ld_reg_to_reg("a", "l");
+                self.do_ld_reg_to_reg("a", "l"); //LdAl
             }
 
             0x77 => {
                 //LdHlA
-                let h16 = (self.h as u16) << 8;
-                let hl: u16 = h16 | (self.l as u16);
+
+                let hl = self.h_l_to_hl();
                 mmu.write_byte(hl, self.a);
 
                 self.inc_pc_t(1, 8);
@@ -756,8 +740,8 @@ impl CPU {
 
             0x32 => {
                 //LddHlA
-                let h16 = (self.h as u16) << 8;
-                let mut hl: u16 = h16 | (self.l as u16);
+
+                let mut hl = self.h_l_to_hl();
                 mmu.write_byte(hl, self.a);
 
                 hl = hl.wrapping_sub(1);
@@ -770,9 +754,7 @@ impl CPU {
 
             0x22 => {
                 //LdiHlA
-
-                let h16 = (self.h as u16) << 8;
-                let mut hl: u16 = h16 | (self.l as u16);
+                let mut hl = self.h_l_to_hl();
                 mmu.write_byte(hl, self.a);
 
                 hl = hl.wrapping_add(1);
@@ -784,8 +766,7 @@ impl CPU {
             }
             0x2A => {
                 //LdiAHl
-                let h16 = (self.h as u16) << 8;
-                let mut hl: u16 = h16 | (self.l as u16);
+                let mut hl = self.h_l_to_hl();
                 self.a = mmu.read_byte(hl);
 
                 hl = hl.wrapping_add(1);
@@ -830,257 +811,80 @@ impl CPU {
 
                 self.inc_pc_t(1, 4);
             }
-            Instruction::BitbA(bit_mask) => {
-                //BitbA
-                let bit_mask = 0b0000_0001;
-                if self.debug {
-                    println!("Bit b,A   b: {:b}", bit_mask);
-                }
-                let bit_test: u8 = self.a & *bit_mask;
-                self.do_bit_opcode(*bit_mask != bit_test);
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::BitbB(bit_mask) => {
-                //BitbB
-                if self.debug {
-                    println!("Bit b,B   b: {:b}", bit_mask);
-                }
-                let bit_test: u8 = self.b & *bit_mask;
-                self.do_bit_opcode(*bit_mask != bit_test);
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::BitbC(bit_mask) => {
-                //BitbC
-                if self.debug {
-                    println!("Bit b,C   b: {:b}", bit_mask);
-                }
-                let bit_test: u8 = self.c & *bit_mask;
-                self.do_bit_opcode(*bit_mask != bit_test);
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
 
-            Instruction::BitbD(bit_mask) => {
-                //BitbD
-                if self.debug {
-                    println!("Bit b,D   b: {:b}", bit_mask);
-                }
-                let bit_test: u8 = self.d & *bit_mask;
-                self.do_bit_opcode(*bit_mask != bit_test);
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::BitbE(bit_mask) => {
-                //BitbE
-                if self.debug {
-                    println!("Bit b,E   b: {:b}", bit_mask);
-                }
-                let bit_test: u8 = self.e & *bit_mask;
-                self.do_bit_opcode(*bit_mask != bit_test);
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::BitbH(bit_mask) => {
-                //BitbH
-                if self.debug {
-                    println!("Bit b,H   b: {:b}", bit_mask);
-                }
-                if self.debug {
-                    println!(
-                        "BIT n,H - antes,   b: {:b}, H: {:#X} Z: {:?}, N: {:?}, H(bit): {:?}, C: {:?}",
-                        bit_mask,
-                        self.h,
-                        self.get_z_flag(),
-                        self.get_n_flag(),
-                        self.get_h_flag(),
-                        self.get_c_flag()
-                    );
-                }
-                let bit_test: u8 = self.h & *bit_mask;
-                self.do_bit_opcode(*bit_mask != bit_test);
-                if self.debug {
-                    println!(
-                        "BIT n,H - despues, b: {:b}, H: {:#X} Z: {:?}, N: {:?}, H(bit): {:?}, C: {:?}",
-                        bit_mask,
-                        self.h,
-                        self.get_z_flag(),
-                        self.get_n_flag(),
-                        self.get_h_flag(),
-                        self.get_c_flag()
-                    );
-                }
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
-            Instruction::BitbL(bit_mask) => {
-                //BitbL
-                if self.debug {
-                    println!("Bit b,L   b: {:b}", bit_mask);
-                }
-                let bit_test: u8 = self.l & *bit_mask;
-                self.do_bit_opcode(*bit_mask != bit_test);
-                self.t += 8;
-                self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-            }
+            0xCB => {
+                // Opcode especial
+                match cb_opcode {
+                    0x40 => self.do_bit_opcode(self.b, 0b0000_0001), //BitbB bit 0
+                    0x41 => self.do_bit_opcode(self.c, 0b0000_0001), //BitbC bit 0
+                    0x42 => self.do_bit_opcode(self.d, 0b0000_0001), //BitbD bit 0
+                    0x43 => self.do_bit_opcode(self.e, 0b0000_0001), //BitbE bit 0
+                    0x44 => self.do_bit_opcode(self.h, 0b0000_0001), //BitbH bit 0
+                    0x45 => self.do_bit_opcode(self.l, 0b0000_0001), //BitbL bit 0
+                    0x47 => self.do_bit_opcode(self.a, 0b0000_0001), //BitbA bit 0
 
-            Instruction::JrNz(n) => {
-                if self.debug {
-                    println!("JR NZ n: {:#X}", n);
-                }
-                self.pc = self.pc + 2;
-                if self.debug {
-                    println!(
-                        "JR NZ, n - antes,   n: {:#X}, Z: {:?}, PC: {:#X}",
-                        n,
-                        self.get_z_flag(),
-                        self.pc
-                    );
-                }
+                    0x48 => self.do_bit_opcode(self.b, 0b0000_0010), //BitbB bit 1
+                    0x49 => self.do_bit_opcode(self.c, 0b0000_0010), //BitbC bit 1
+                    0x4A => self.do_bit_opcode(self.d, 0b0000_0010), //BitbD bit 1
+                    0x4B => self.do_bit_opcode(self.e, 0b0000_0010), //BitbE bit 1
+                    0x4C => self.do_bit_opcode(self.h, 0b0000_0010), //BitbH bit 1
+                    0x4D => self.do_bit_opcode(self.l, 0b0000_0010), //BitbL bit 1
+                    0x4F => self.do_bit_opcode(self.a, 0b0000_0010), //BitbA bit 1
 
-                if !self.get_z_flag() {
-                    self.pc = self.pc.wrapping_add(*n as u16);
-                    self.t += 12;
-                    self.m += 3; //TODO: Creo que teniendo los t states es suficiente
-                } else {
-                    self.t += 8;
-                    self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-                }
-                if self.debug {
-                    println!(
-                        "JR NZ, n - despues, n: {:#X}, Z: {:?}, PC: {:#X}",
-                        n,
-                        self.get_z_flag(),
-                        self.pc
-                    );
+                    0x50 => self.do_bit_opcode(self.b, 0b0000_0100), //BitbB bit 2
+                    0x51 => self.do_bit_opcode(self.c, 0b0000_0100), //BitbC bit 2
+                    0x52 => self.do_bit_opcode(self.d, 0b0000_0100), //BitbD bit 2
+                    0x53 => self.do_bit_opcode(self.e, 0b0000_0100), //BitbE bit 2
+                    0x54 => self.do_bit_opcode(self.h, 0b0000_0100), //BitbH bit 2
+                    0x55 => self.do_bit_opcode(self.l, 0b0000_0100), //BitbL bit 2
+                    0x57 => self.do_bit_opcode(self.a, 0b0000_0100), //BitbA bit 2
+
+                    0x58 => self.do_bit_opcode(self.b, 0b0000_1000), //BitbB bit 3
+                    0x59 => self.do_bit_opcode(self.c, 0b0000_1000), //BitbC bit 3
+                    0x5A => self.do_bit_opcode(self.d, 0b0000_1000), //BitbD bit 3
+                    0x5B => self.do_bit_opcode(self.e, 0b0000_1000), //BitbE bit 3
+                    0x5C => self.do_bit_opcode(self.h, 0b0000_1000), //BitbH bit 3
+                    0x5D => self.do_bit_opcode(self.l, 0b0000_1000), //BitbL bit 3
+                    0x5F => self.do_bit_opcode(self.a, 0b0000_1000), //BitbA bit 3
+
+                    0x7C => self.do_bit_opcode(self.h, 0b1000_0000), //BitbH bit 7
+
+                    0x17 => self.a = self.do_rl_n(self.a), //RlA
+                    0x10 => self.b = self.do_rl_n(self.b), //RlB
+                    0x11 => self.c = self.do_rl_n(self.c), //RlC
+                    0x12 => self.d = self.do_rl_n(self.d), //RlD
+                    0x13 => self.e = self.do_rl_n(self.e), //RlE
+                    0x14 => self.h = self.do_rl_n(self.h), //RlH
+                    0x15 => self.l = self.do_rl_n(self.l), //RlL
+
+                    _ => panic!(
+                        "DECODIFICACION PREFIJO CB: cb_opcode no reconocido \
+                         Estado de MMU {:?}\n Opcode CB: {:#X} en PC {:#X}\n ESTADO CPU: {:?}",
+                        mmu, cb_opcode, self.pc as u16, self
+                    ),
                 }
             }
 
-            Instruction::JrZ(n) => {
-                if self.debug {
-                    println!("JR Z n: {:#X}", n);
-                }
-                self.pc = self.pc + 2;
-                if self.get_z_flag() {
-                    self.pc = self.pc.wrapping_add(*n as u16);
-                    self.t += 12;
-                    self.m += 3; //TODO: Creo que teniendo los t states es suficiente
-                } else {
-                    self.t += 8;
-                    self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-                }
-            }
+            0x20 => self.do_jump(!self.get_z_flag(), n1 as i8), // JrNZ
+            0x28 => self.do_jump(self.get_z_flag(), n1 as i8),  // JrZ
+            0x30 => self.do_jump(!self.get_c_flag(), n1 as i8), // JrNc
+            0x38 => self.do_jump(self.get_c_flag(), n1 as i8),  // JrC
+            0x18 => self.do_jump(true, n1 as i8),               // Jr
 
-            Instruction::JrNc(n) => {
-                if self.debug {
-                    println!("JR NC n: {:#X}", n);
-                }
-                self.pc = self.pc + 2;
-                if !self.get_c_flag() {
-                    self.pc = self.pc.wrapping_add(*n as u16);
-                    self.t += 12;
-                    self.m += 3; //TODO: Creo que teniendo los t states es suficiente
-                } else {
-                    self.t += 8;
-                    self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-                }
-            }
-
-            Instruction::JrC(n) => {
-                if self.debug {
-                    println!("JR C n: {:#X}", n);
-                }
-                self.pc = self.pc + 2;
-
-                if self.get_c_flag() {
-                    self.pc = self.pc.wrapping_add(*n as u16);
-                    self.t += 12;
-                    self.m += 3; //TODO: Creo que teniendo los t states es suficiente
-                } else {
-                    self.t += 8;
-                    self.m += 2; //TODO: Creo que teniendo los t states es suficiente
-                }
-            }
-
-            Instruction::Jr(n) => {
-                if self.debug {
-                    println!("JR n: {:#X}", n);
-                }
-                self.pc = self.pc + 2;
-                self.pc = self.pc.wrapping_add(*n as u16);
-                self.t += 12;
-                self.m += 3;
-            }
-
-            Instruction::Jp(d16) => {
-                if self.debug {
-                    println!("JP nn: {:#X}", d16);
-                }
-                self.pc = *d16;
-
+            0xC3 => {
+                // Jp
+                self.pc = d16;
                 self.t += 16;
-                self.m += 4;
             }
-
-            Instruction::IncA => {
-                if self.debug {
-                    println!("INC A");
-                }
-                self.a = self.do_inc_n(self.a);
-            }
-
-            Instruction::IncB => {
-                if self.debug {
-                    println!("INC B");
-                }
-                self.b = self.do_inc_n(self.b);
-            }
-
-            Instruction::IncC => {
-                if self.debug {
-                    println!("INC C");
-                }
-                self.c = self.do_inc_n(self.c);
-            }
-            Instruction::IncD => {
-                if self.debug {
-                    println!("INC D");
-                }
-                self.d = self.do_inc_n(self.d);
-            }
-
-            Instruction::IncE => {
-                if self.debug {
-                    println!("INC E");
-                }
-                self.e = self.do_inc_n(self.e);
-            }
-            Instruction::IncH => {
-                if self.debug {
-                    println!("INC H");
-                }
-                self.h = self.do_inc_n(self.h);
-            }
-
-            Instruction::IncL => {
-                if self.debug {
-                    println!("INC L");
-                }
-                self.l = self.do_inc_n(self.l);
-            }
-
-            Instruction::IncHl => {
-                // TODO: ERROR direccion indirecta (no lo ha mirado bien) y falta cambio PC
-                if self.debug {
-                    println!("INC (HL)");
-                }
-                let h16 = (self.h as u16) << 8;
-                let mut hl: u16 = h16 | (self.l as u16);
-                hl = self.do_inc_d16(hl);
-                self.h = ((hl & 0xFF00) >> 8) as u8;
-                self.l = (hl & 0x00FF) as u8;
-            }
+            0x3C => self.a = self.do_inc_n(self.a), // IncA
+            0x04 => self.b = self.do_inc_n(self.b), // IncB
+            0x0C => self.c = self.do_inc_n(self.c), // IncC
+            0x14 => self.d = self.do_inc_n(self.d), // IncD
+            0x1C => self.e = self.do_inc_n(self.e), // IncE
+            0x24 => self.h = self.do_inc_n(self.h), // IncH
+            0x2C => self.l = self.do_inc_n(self.l), // IncL
+            // TODO: ERROR direccion indirecta (no lo ha mirado bien) y falta cambio PC
+            0x34 => self.hl_to_h_l(self.do_inc_d16(self.h_l_to_hl())), // IncHl
 
             Instruction::IncHlNoflags => {
                 if self.debug {
@@ -1394,48 +1198,6 @@ impl CPU {
                 self.m += 3; //TODO: Creo que teniendo los t states es suficiente
             }
 
-            Instruction::RlA => {
-                if self.debug {
-                    println!("RL A");
-                }
-                self.a = self.do_rl_n(self.a);
-            }
-            Instruction::RlB => {
-                if self.debug {
-                    println!("RL B");
-                }
-                self.b = self.do_rl_n(self.b);
-            }
-            Instruction::RlC => {
-                if self.debug {
-                    println!("RL C");
-                }
-                self.c = self.do_rl_n(self.c);
-            }
-            Instruction::RlD => {
-                if self.debug {
-                    println!("RL D");
-                }
-                self.d = self.do_rl_n(self.d);
-            }
-            Instruction::RlE => {
-                if self.debug {
-                    println!("RL E");
-                }
-                self.e = self.do_rl_n(self.e);
-            }
-            Instruction::RlH => {
-                if self.debug {
-                    println!("RL H");
-                }
-                self.h = self.do_rl_n(self.h);
-            }
-            Instruction::RlL => {
-                if self.debug {
-                    println!("RL L");
-                }
-                self.l = self.do_rl_n(self.l);
-            }
             Instruction::RLA => {
                 if self.debug {
                     println!("RLA");
