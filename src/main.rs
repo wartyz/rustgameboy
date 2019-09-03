@@ -1,5 +1,8 @@
 /* Emulador que puede servir para comprobar que va bien
-http://www.z80.info/zip/zemu.zip */
+   http://www.z80.info/zip/zemu.zip
+   tetris desensamblado:
+   https://github.com/osnr/tetris/blob/master/tetris.asm
+*/
 use gbrustemu::cpu::CPU;
 use gbrustemu::mmu::MMU;
 use gbrustemu::ppu::{LIGHTEST_GREEN, PPU, SCREEN_HEIGHT, SCREEN_WIDTH};
@@ -28,8 +31,6 @@ fn main() {
     // Ejecuta instrucciones en RAM
     let mut cpu = CPU::new();
     let mut ppu = PPU::new();
-
-    //cpu.set_debug_flag(); // QUITAR ESTA LÍNEA SI NO SE QUIERE DEBUG
 
     let mut screen = vec![LIGHTEST_GREEN; SCREEN_WIDTH * SCREEN_HEIGHT];
     let mut window = Window::new(

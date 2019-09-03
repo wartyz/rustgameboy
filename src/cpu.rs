@@ -347,179 +347,179 @@ impl CPU {
         self.f = (af & 0x00FF) as u8;
     }
 
-    fn decode(&mut self, byte: u8, mmu: &MMU) -> Instruction {
-        if self.debug {
-            println!("Decodificando PC: {:#X}", self.pc);
-        }
-
-        // Preparar variables especiales
-
-        // El valor inmediato de 16 bits
-        let n1 = mmu.read_byte(self.pc + 1) as u16;
-
-        let n2 = mmu.read_byte(self.pc + 2) as u16;
-
-        // Invirtiendo posición ya que es BIG ENDIAN
-        let d16: u16 = (n2 << 8) | n1;
-
-        // En caso de prefijo CB, n1 es un OPCODE
-        let cb_opcode = n1;
-        // En caso de prefijo CB, n2 es n1
-        let cb_n1 = n2;
-        let cb_n2 = mmu.read_byte(self.pc + 3) as u16;
-        // Invirtiendo posición ya que es BIG ENDIAN
-        let cb_d16: u16 = (cb_n2 << 8) | cb_n1;
-
-        match byte {
-            0x00 => Instruction::Nop,
-            0xF3 => Instruction::Di,
-            0xFB => Instruction::Ei,
-            0x01 => Instruction::LdBc(d16),
-            0x11 => Instruction::LdDe(d16),
-            0x21 => Instruction::LdHl(d16),
-            0x31 => Instruction::LdSp(d16),
-            0xE0 => Instruction::LdFf00U8a(n1 as u8),
-            0xF0 => Instruction::LdAFf00U8(n1 as u8),
-            0xE2 => Instruction::LdFf00Ca,
-            0x18 => Instruction::Jr(n1 as i8),
-            0x20 => Instruction::JrNz(n1 as i8),
-            0x28 => Instruction::JrZ(n1 as i8),
-            0x30 => Instruction::JrNc(n1 as i8),
-            0x38 => Instruction::JrC(n1 as i8),
-            0xC3 => Instruction::Jp(d16),
-            0x3E => Instruction::LdA(n1 as u8),
-            0x06 => Instruction::LdB(n1 as u8), // LD nn,n
-            0x0E => Instruction::LdC(n1 as u8),
-            0x16 => Instruction::LdD(n1 as u8),
-            0x1E => Instruction::LdE(n1 as u8),
-            0x26 => Instruction::LdH(n1 as u8),
-            0x2E => Instruction::LdL(n1 as u8),
-            0x7F => Instruction::LdAa,
-            0x47 => Instruction::LdBa,
-            0x4F => Instruction::LdCa,
-            0x57 => Instruction::LdDa,
-            0x5F => Instruction::LdEa,
-            0x67 => Instruction::LdHa,
-            0x6F => Instruction::LdLa,
-            0x77 => Instruction::LdHlA,
-            0x36 => Instruction::LdHln(n1 as u8),
-            0x1A => Instruction::LdADe,
-            0x0A => Instruction::LdABc,
-            0x78 => Instruction::LdAb,
-            0x79 => Instruction::LdAc,
-            0x7A => Instruction::LdAd,
-            0x7B => Instruction::LdAe,
-            0x7C => Instruction::LdAh,
-            0x7D => Instruction::LdAl,
-            0xEA => Instruction::LdXxA(d16),
-            0x32 => Instruction::LddHlA,
-            0x22 => Instruction::LdiHlA,
-            0x2A => Instruction::LdiAHl,
-            0xAF => Instruction::XorA,
-            0xA8 => Instruction::XorB,
-            0xA9 => Instruction::XorC,
-            0xAA => Instruction::XorD,
-            0xAB => Instruction::XorE,
-            0xAC => Instruction::XorH,
-            0xAD => Instruction::XorL,
-            0xAE => Instruction::XorHL,
-            0x3C => Instruction::IncA,
-            0x04 => Instruction::IncB,
-            0x0C => Instruction::IncC,
-            0x14 => Instruction::IncD,
-            0x1C => Instruction::IncE,
-            0x24 => Instruction::IncH,
-            0x2C => Instruction::IncL,
-
-            // TODO: Posible error INC HL
-            0x23 => Instruction::IncHlNoflags,
-            // TODO: Posible error INC (HL)
-            0x34 => Instruction::IncHl,
-            0x13 => Instruction::IncDe,
-            0x03 => Instruction::IncBc,
-            0x33 => Instruction::IncSp,
-            0x3D => Instruction::DecA,
-            0x05 => Instruction::DecB,
-            0x0D => Instruction::DecC,
-            0x15 => Instruction::DecD,
-            0x1D => Instruction::DecE,
-            0x25 => Instruction::DecH,
-            0x2D => Instruction::DecL,
-            0x35 => Instruction::DecHl,
-            0x97 => Instruction::SubA,
-            0x90 => Instruction::SubB,
-            0x91 => Instruction::SubC,
-            0x92 => Instruction::SubD,
-            0x93 => Instruction::SubE,
-            0x94 => Instruction::SubH,
-            0x95 => Instruction::SubL,
-            0x96 => Instruction::SubHl,
-            0xD6 => Instruction::Sub(n1 as u8),
-            0x87 => Instruction::AddAa,
-            0x80 => Instruction::AddAb,
-            0x81 => Instruction::AddAc,
-            0x82 => Instruction::AddAd,
-            0x83 => Instruction::AddAe,
-            0x84 => Instruction::AddAh,
-            0x85 => Instruction::AddAl,
-            0x86 => Instruction::AddAhl,
-            0xC6 => Instruction::AddA(n1 as u8),
-            0xC4 => Instruction::CallNz(d16),
-            0xD4 => Instruction::CallNc(d16),
-            0xCC => Instruction::CallZ(d16),
-            0xDC => Instruction::CallC(d16),
-            0xCD => Instruction::Call(d16),
-            0xC9 => Instruction::Ret,
-            0xF5 => Instruction::PushAf,
-            0xC5 => Instruction::PushBc,
-            0xD5 => Instruction::PushDe,
-            0xE5 => Instruction::PushHl,
-            0xF1 => Instruction::PopAf,
-            0xC1 => Instruction::PopBc,
-            0xD1 => Instruction::PopDe,
-            0xE1 => Instruction::PopHl,
-            0x17 => Instruction::RLA,
-            0xBF => Instruction::CpA,
-            0xB8 => Instruction::CpB,
-            0xB9 => Instruction::CpC,
-            0xBA => Instruction::CpD,
-            0xBB => Instruction::CpE,
-            0xBC => Instruction::CpH,
-            0xBD => Instruction::CpL,
-            0xBE => Instruction::CpHl,
-            0xFE => Instruction::Cp(n1 as u8),
-            0xCB => { // Opcode especial
-                match cb_opcode {
-                    0x46 => Instruction::BitbHL(0b0000_0001),
-                    0x4E => Instruction::BitbHL(0b0000_0010),
-                    0x56 => Instruction::BitbHL(0b0000_0100),
-                    0x5E => Instruction::BitbHL(0b0000_1000),
-                    0x7C => Instruction::BitbH(0b1000_0000),
-
-                    0x17 => Instruction::RlA,
-                    0x10 => Instruction::RlB,
-                    0x11 => Instruction::RlC,
-                    0x12 => Instruction::RlD,
-                    0x13 => Instruction::RlE,
-                    0x14 => Instruction::RlH,
-                    0x15 => Instruction::RlL,
-                    0x16 => Instruction::RlHl,
-
-                    _ => panic!(
-                        "DECODIFICACION PREFIJO CB: cb_opcode no reconocido \
-                         Estado de MMU {:?}\n Opcode CB: {:#X} en PC {:#X}\n ESTADO CPU: {:?}",
-                        mmu, cb_opcode, self.pc as u16, self
-                    )
-                }
-            }
-
-            0xEE => Instruction::Xor(n1 as u8),
-            _ => panic!(
-                "\nESTADO DE MMU: {:?} \nESTADO CPU: {:?}\nDECODIFICACION: byte no reconocido {:#X} en PC {:#X}",
-                mmu, self, byte, self.pc,
-            )
-        }
-    }
+    //    fn decode(&mut self, byte: u8, mmu: &MMU) -> Instruction {
+    //        if self.debug {
+    //            println!("Decodificando PC: {:#X}", self.pc);
+    //        }
+    //
+    //        // Preparar variables especiales
+    //
+    //        // El valor inmediato de 16 bits
+    //        let n1 = mmu.read_byte(self.pc + 1) as u16;
+    //
+    //        let n2 = mmu.read_byte(self.pc + 2) as u16;
+    //
+    //        // Invirtiendo posición ya que es BIG ENDIAN
+    //        let d16: u16 = (n2 << 8) | n1;
+    //
+    //        // En caso de prefijo CB, n1 es un OPCODE
+    //        let cb_opcode = n1;
+    //        // En caso de prefijo CB, n2 es n1
+    //        let cb_n1 = n2;
+    //        let cb_n2 = mmu.read_byte(self.pc + 3) as u16;
+    //        // Invirtiendo posición ya que es BIG ENDIAN
+    //        let cb_d16: u16 = (cb_n2 << 8) | cb_n1;
+    //
+    //        match byte {
+    //            0x00 => Instruction::Nop,
+    //            0xF3 => Instruction::Di,
+    //            0xFB => Instruction::Ei,
+    //            0x01 => Instruction::LdBc(d16),
+    //            0x11 => Instruction::LdDe(d16),
+    //            0x21 => Instruction::LdHl(d16),
+    //            0x31 => Instruction::LdSp(d16),
+    //            0xE0 => Instruction::LdFf00U8a(n1 as u8),
+    //            0xF0 => Instruction::LdAFf00U8(n1 as u8),
+    //            0xE2 => Instruction::LdFf00Ca,
+    //            0x18 => Instruction::Jr(n1 as i8),
+    //            0x20 => Instruction::JrNz(n1 as i8),
+    //            0x28 => Instruction::JrZ(n1 as i8),
+    //            0x30 => Instruction::JrNc(n1 as i8),
+    //            0x38 => Instruction::JrC(n1 as i8),
+    //            0xC3 => Instruction::Jp(d16),
+    //            0x3E => Instruction::LdA(n1 as u8),
+    //            0x06 => Instruction::LdB(n1 as u8), // LD nn,n
+    //            0x0E => Instruction::LdC(n1 as u8),
+    //            0x16 => Instruction::LdD(n1 as u8),
+    //            0x1E => Instruction::LdE(n1 as u8),
+    //            0x26 => Instruction::LdH(n1 as u8),
+    //            0x2E => Instruction::LdL(n1 as u8),
+    //            0x7F => Instruction::LdAa,
+    //            0x47 => Instruction::LdBa,
+    //            0x4F => Instruction::LdCa,
+    //            0x57 => Instruction::LdDa,
+    //            0x5F => Instruction::LdEa,
+    //            0x67 => Instruction::LdHa,
+    //            0x6F => Instruction::LdLa,
+    //            0x77 => Instruction::LdHlA,
+    //            0x36 => Instruction::LdHln(n1 as u8),
+    //            0x1A => Instruction::LdADe,
+    //            0x0A => Instruction::LdABc,
+    //            0x78 => Instruction::LdAb,
+    //            0x79 => Instruction::LdAc,
+    //            0x7A => Instruction::LdAd,
+    //            0x7B => Instruction::LdAe,
+    //            0x7C => Instruction::LdAh,
+    //            0x7D => Instruction::LdAl,
+    //            0xEA => Instruction::LdXxA(d16),
+    //            0x32 => Instruction::LddHlA,
+    //            0x22 => Instruction::LdiHlA,
+    //            0x2A => Instruction::LdiAHl,
+    //            0xAF => Instruction::XorA,
+    //            0xA8 => Instruction::XorB,
+    //            0xA9 => Instruction::XorC,
+    //            0xAA => Instruction::XorD,
+    //            0xAB => Instruction::XorE,
+    //            0xAC => Instruction::XorH,
+    //            0xAD => Instruction::XorL,
+    //            0xAE => Instruction::XorHL,
+    //            0x3C => Instruction::IncA,
+    //            0x04 => Instruction::IncB,
+    //            0x0C => Instruction::IncC,
+    //            0x14 => Instruction::IncD,
+    //            0x1C => Instruction::IncE,
+    //            0x24 => Instruction::IncH,
+    //            0x2C => Instruction::IncL,
+    //
+    //            // TODO: Posible error INC HL
+    //            0x23 => Instruction::IncHlNoflags,
+    //            // TODO: Posible error INC (HL)
+    //            0x34 => Instruction::IncHl,
+    //            0x13 => Instruction::IncDe,
+    //            0x03 => Instruction::IncBc,
+    //            0x33 => Instruction::IncSp,
+    //            0x3D => Instruction::DecA,
+    //            0x05 => Instruction::DecB,
+    //            0x0D => Instruction::DecC,
+    //            0x15 => Instruction::DecD,
+    //            0x1D => Instruction::DecE,
+    //            0x25 => Instruction::DecH,
+    //            0x2D => Instruction::DecL,
+    //            0x35 => Instruction::DecHl,
+    //            0x97 => Instruction::SubA,
+    //            0x90 => Instruction::SubB,
+    //            0x91 => Instruction::SubC,
+    //            0x92 => Instruction::SubD,
+    //            0x93 => Instruction::SubE,
+    //            0x94 => Instruction::SubH,
+    //            0x95 => Instruction::SubL,
+    //            0x96 => Instruction::SubHl,
+    //            0xD6 => Instruction::Sub(n1 as u8),
+    //            0x87 => Instruction::AddAa,
+    //            0x80 => Instruction::AddAb,
+    //            0x81 => Instruction::AddAc,
+    //            0x82 => Instruction::AddAd,
+    //            0x83 => Instruction::AddAe,
+    //            0x84 => Instruction::AddAh,
+    //            0x85 => Instruction::AddAl,
+    //            0x86 => Instruction::AddAhl,
+    //            0xC6 => Instruction::AddA(n1 as u8),
+    //            0xC4 => Instruction::CallNz(d16),
+    //            0xD4 => Instruction::CallNc(d16),
+    //            0xCC => Instruction::CallZ(d16),
+    //            0xDC => Instruction::CallC(d16),
+    //            0xCD => Instruction::Call(d16),
+    //            0xC9 => Instruction::Ret,
+    //            0xF5 => Instruction::PushAf,
+    //            0xC5 => Instruction::PushBc,
+    //            0xD5 => Instruction::PushDe,
+    //            0xE5 => Instruction::PushHl,
+    //            0xF1 => Instruction::PopAf,
+    //            0xC1 => Instruction::PopBc,
+    //            0xD1 => Instruction::PopDe,
+    //            0xE1 => Instruction::PopHl,
+    //            0x17 => Instruction::RLA,
+    //            0xBF => Instruction::CpA,
+    //            0xB8 => Instruction::CpB,
+    //            0xB9 => Instruction::CpC,
+    //            0xBA => Instruction::CpD,
+    //            0xBB => Instruction::CpE,
+    //            0xBC => Instruction::CpH,
+    //            0xBD => Instruction::CpL,
+    //            0xBE => Instruction::CpHl,
+    //            0xFE => Instruction::Cp(n1 as u8),
+    //            0xCB => { // Opcode especial
+    //                match cb_opcode {
+    //                    0x46 => Instruction::BitbHL(0b0000_0001),
+    //                    0x4E => Instruction::BitbHL(0b0000_0010),
+    //                    0x56 => Instruction::BitbHL(0b0000_0100),
+    //                    0x5E => Instruction::BitbHL(0b0000_1000),
+    //                    0x7C => Instruction::BitbH(0b1000_0000),
+    //
+    //                    0x17 => Instruction::RlA,
+    //                    0x10 => Instruction::RlB,
+    //                    0x11 => Instruction::RlC,
+    //                    0x12 => Instruction::RlD,
+    //                    0x13 => Instruction::RlE,
+    //                    0x14 => Instruction::RlH,
+    //                    0x15 => Instruction::RlL,
+    //                    0x16 => Instruction::RlHl,
+    //
+    //                    _ => panic!(
+    //                        "DECODIFICACION PREFIJO CB: cb_opcode no reconocido \
+    //                         Estado de MMU {:?}\n Opcode CB: {:#X} en PC {:#X}\n ESTADO CPU: {:?}",
+    //                        mmu, cb_opcode, self.pc as u16, self
+    //                    )
+    //                }
+    //            }
+    //
+    //            0xEE => Instruction::Xor(n1 as u8),
+    //            _ => panic!(
+    //                "\nESTADO DE MMU: {:?} \nESTADO CPU: {:?}\nDECODIFICACION: byte no reconocido {:#X} en PC {:#X}",
+    //                mmu, self, byte, self.pc,
+    //            )
+    //        }
+    //    }
 
     /// Establece el valor de un registro
     fn set_register(&mut self, register_name: &str, register_value: u8) {
@@ -753,8 +753,11 @@ impl CPU {
                 self.inc_pc_t(1, 8);
             }
 
-            // TODO: ERROR direccion indirecta (no lo ha mirado bien) y falta cambio PC
-            0x34 => self.hl_to_h_l(self.do_inc_d16(self.h_l_to_hl())), // IncHl
+            0x34 => {
+                let current_value = mmu.read_byte(self.h_l_to_hl());
+                mmu.write_byte(self.h_l_to_hl(), self.do_inc_n(current_value));
+            }
+
             0x36 => {
                 //LdHln
                 let mut hl = self.h_l_to_hl();
@@ -974,7 +977,6 @@ impl CPU {
             0xC9 => {
                 //Ret
                 self.pc = self.pop_from_stack(mmu);
-
                 self.t += 16;
             }
 
@@ -985,168 +987,103 @@ impl CPU {
                 self.inc_pc_t(1, 16);
             }
 
-            0xC5 => { //PushBc
-                let bc = self.bc_
+            0xC5 => {
+                //PushBc
+                let bc = self.b_c_to_bc();
                 self.push_to_stack(mmu, bc);
-                self.pc += 1;
-
-                self.t += 16;
+                self.inc_pc_t(1, 16);
             }
 
-            Instruction::PushDe => {
-                if self.debug {
-                    println!("PUSH DE");
-                }
-                let d16 = (self.d as u16) << 8;
-                let de: u16 = d16 | (self.e as u16);
+            0xD5 => {
+                //PushDe
+                let de = self.d_e_to_de();
                 self.push_to_stack(mmu, de);
-                self.pc += 1;
-
-                self.t += 16;
+                self.inc_pc_t(1, 16);
             }
 
-            Instruction::PushHl => {
-                if self.debug {
-                    println!("PUSH HL");
-                }
-                let h16 = (self.h as u16) << 8;
-                let hl: u16 = h16 | (self.l as u16);
+            0xE5 => {
+                //PushHl
+                let hl = self.h_l_to_hl();
                 self.push_to_stack(mmu, hl);
-                self.pc += 1;
-
-                self.t += 16;
+                self.inc_pc_t(1, 16);
             }
-            Instruction::PopAf => {
-                if self.debug {
-                    println!("POP AF");
-                }
+            0xF1 => {
+                //PopAf
                 let addr: u16 = self.pop_from_stack(mmu);
-                self.a = ((addr & 0xFF00) >> 8) as u8;
-                self.f = (addr & 0x00FF) as u8;
-
-                self.pc += 1;
-
-                self.t += 12;
+                self.af_to_a_f(addr);
+                self.inc_pc_t(1, 12);
             }
-            Instruction::PopDe => {
-                if self.debug {
-                    println!("POP DE");
-                }
+            0xD1 => {
+                //PopDe
                 let addr: u16 = self.pop_from_stack(mmu);
-                self.d = ((addr & 0xFF00) >> 8) as u8;
-                self.e = (addr & 0x00FF) as u8;
-
-                self.pc += 1;
-
-                self.t += 12;
+                self.de_to_d_e(addr);
+                self.inc_pc_t(1, 12);
             }
-            Instruction::PopHl => {
-                if self.debug {
-                    println!("POP HL");
-                }
+            0xE1 => {
+                //PopHl
                 let addr: u16 = self.pop_from_stack(mmu);
-                self.h = ((addr & 0xFF00) >> 8) as u8;
-                self.l = (addr & 0x00FF) as u8;
-
-                self.pc += 1;
-
-                self.t += 12;
+                self.hl_to_h_l(addr);
+                self.inc_pc_t(1, 12);
             }
 
-            Instruction::PopBc => {
-                if self.debug {
-                    println!("POP BC");
-                }
+            0xC1 => {
+                //PopBc
                 let addr: u16 = self.pop_from_stack(mmu);
-                self.b = ((addr & 0xFF00) >> 8) as u8;
-                self.c = (addr & 0x00FF) as u8;
-
-                self.pc += 1;
-
-                self.t += 12;
+                self.bc_to_b_c(addr);
+                self.inc_pc_t(1, 12);
             }
 
-            Instruction::RLA => {
-                if self.debug {
-                    println!("RLA");
-                }
+            0x17 => {
+                //RLA
                 self.a = self.do_rl_n(self.a);
-                self.pc -= 1; // Solucion poco natural, decrementar despues de incrementar 2
-                self.t -= 4; // Solucion poco natural, decrementar despues de incrementar
-                self.m -= 1; // Solucion poco natural, decrementar despues de incrementar
+                self.inc_pc_t(1, 4);
             }
-            Instruction::CpA => {
-                if self.debug {
-                    println!("CP A");
-                }
+            0xBF => {
+                //CpA
                 let _ = self.do_sub(self.a, self.a);
             }
-            Instruction::CpB => {
-                if self.debug {
-                    println!("CP B");
-                }
+            0xB8 => {
+                //CpB
                 let _ = self.do_sub(self.a, self.b);
             }
-            Instruction::CpC => {
-                if self.debug {
-                    println!("CP C");
-                }
+            0xB9 => {
+                //CpC
                 let _ = self.do_sub(self.a, self.c);
             }
-            Instruction::CpD => {
-                if self.debug {
-                    println!("CP D");
-                }
+            0xBA => {
+                //CpD
                 let _ = self.do_sub(self.a, self.d);
             }
-            Instruction::CpE => {
-                if self.debug {
-                    println!("CP E");
-                }
+            0xBB => {
+                //CpE
                 let _ = self.do_sub(self.a, self.e);
             }
-            Instruction::CpH => {
-                if self.debug {
-                    println!("CP H");
-                }
+            0xBC => {
                 let _ = self.do_sub(self.a, self.h);
-            }
-            Instruction::CpL => {
-                if self.debug {
-                    println!("CP L");
-                }
+            } //CpH
+            0xBD => {
+                //CpL
                 let _ = self.do_sub(self.a, self.l);
             }
-            Instruction::CpHl => {
-                if self.debug {
-                    println!("CP (HL)");
-                }
-
-                let h16 = (self.h as u16) << 8;
-                let hl: u16 = h16 | (self.l as u16);
+            0xBE => {
+                //CpHl
+                let hl = self.h_l_to_hl();
                 let _ = self.do_sub(self.a, mmu.read_byte(hl));
                 //self.pc += 1; TODO: No lo ha puesto
-
-                self.t += 24;
-                self.m += 6; //TODO: Creo que teniendo los t states es suficiente
+                self.t += 4;
             }
 
-            Instruction::Cp(n) => {
-                if self.debug {
-                    println!("CP n:  {:#X}", n);
-                }
+            0xFE => {
+                //Cp(n)
                 let ly = mmu.read_byte(0xFF44);
-                let _ = self.do_sub(self.a, *n);
-
-                self.pc += 1; // (Reincrementos)
-                self.t += 4;
-                self.m += 1;
+                let _ = self.do_sub(self.a, n1 as u8);
+                self.inc_pc_t(1, 4);
             }
 
             _ => panic!(
                 "\nESTADO DE MEM: {:?}\nESTADO CPU: {:?}\nEJECUCION: Instrucción no \
-                 reconocida {:?} en PC {:#X}",
-                mmu, self, instruction, self.pc,
+                 reconocida {:#X} en PC {:#X}",
+                mmu, self, byte, self.pc,
             ),
         }
     }
@@ -1154,32 +1091,14 @@ impl CPU {
     pub fn run_instruction(&mut self, mmu: &mut MMU, ppu: &mut PPU) {
         self.last_m = self.m; // TODO: ¿REDUNDANTE?
         self.last_t = self.t; // TODO: ¿REDUNDANTE?
-        // Obtener instrucción:
+                              // Obtener instrucción:
         let byte = mmu.read_byte(self.pc);
-
-        // Decodificar instrucción
-        let instruction = self.decode(byte, mmu);
 
         // Ejecutar instrucción
         self.execute(byte, mmu);
 
         let current_instruction_t_clocks_passed = self.t - self.last_t; // TODO: ¿tiene sentido?
-        //let lcdc = mmu.read_byte(0xFF40);
-        ppu.step(current_instruction_t_clocks_passed, mmu);
 
-        //        if self.pc == 0x00E8 {
-        //            //let bg_tile_set = ppu.get_bg_tile_set(mmu);
-        //            let mut i = 0;
-        //            //while i < bg_tile_set.len() {
-        //            let tile = ppu.get_tile(mmu, 33168);
-        //            //println!("TILE ADDR: {:?}", (0x8000 + i) as u16);
-        //            println!("TILE: {:?}", tile);
-        //
-        //            ppu.transform_tile_to_minifb_tile(&mmu, tile);
-        //
-        //            i += 16;
-        //            // }
-        //            panic!("Paleta BGP: {:b}", ppu.get_bgp(&mmu));
-        //        }
+        ppu.step(current_instruction_t_clocks_passed, mmu);
     }
 }
